@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquaMind · Neural Net Lab</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --ink:#e6edf3; --muted:#8b98a5;
+    --blue:#3b82f6; --red:#ef4444; --green:#22c55e; --orange:#f59e0b; --line:#2d3644;
+    --accent:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.5}
+  header{padding:22px 26px 10px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:20px;letter-spacing:.3px}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  .tabs{display:flex;gap:6px;padding:14px 26px 0;flex-wrap:wrap}
+  .tab{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+       padding:9px 16px;border-radius:9px 9px 0 0;cursor:pointer;font-size:14px;font-weight:600}
+  .tab.active{background:var(--panel2);color:var(--ink);border-bottom-color:var(--panel2)}
+  .wrap{padding:20px 26px 60px;max-width:1080px;margin:0 auto}
+  .view{display:none}
+  .view.active{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:18px}
+  canvas{display:block;width:100%;background:var(--panel2);border-radius:10px}
+  .controls{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:16px}
+  button.act{background:var(--blue);color:#fff;border:none;padding:10px 18px;border-radius:9px;
+             font-size:14px;font-weight:600;cursor:pointer}
+  button.act:hover{filter:brightness(1.1)}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 14px;font-size:13px}
+  .stat b{color:var(--accent);font-variant-numeric:tabular-nums}
+  label.sl{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+  input[type=range]{width:150px;accent-color:var(--accent)}
+  .legend{font-size:12.5px;color:var(--muted);margin-top:12px}
+  .legend span{display:inline-block;margin-right:14px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin-right:4px}
+  .note{font-size:13px;color:var(--muted);background:var(--panel2);border-left:3px solid var(--accent);
+        padding:10px 14px;border-radius:6px;margin-top:14px}
+  .row{display:flex;gap:18px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:280px}
+  h3{margin:0 0 6px;font-size:15px}
+  /* tensor tab */
+  .stage{perspective:1200px;height:420px;display:flex;align-items:center;justify-content:center;margin-top:8px}
+  .cube{transform-style:preserve-3d;transform:rotateX(58deg) rotateZ(-42deg);position:relative}
+  .layer{position:absolute;display:grid;border-radius:4px;padding:3px;gap:2px;
+         box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  .layer.red{background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.5)}
+  .layer.green{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.5)}
+  .layer.blue{background:rgba(59,130,246,.10);border:1px solid rgba(59,130,246,.5)}
+  .cell{width:22px;height:22px;border-radius:3px;cursor:pointer;transition:transform .1s}
+  .cell:hover{transform:translateZ(14px) scale(1.15);outline:2px solid #fff}
+  .cell.sel{outline:3px solid #fff;transform:translateZ(22px) scale(1.2);z-index:5}
+  .lbl3d{position:absolute;font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
+  .tinfo{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .swatch{width:54px;height:54px;border-radius:8px;border:2px solid var(--line)}
+  .ladder{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .rung{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px}
+  .rung b{color:var(--accent)}
+  code{background:var(--panel2);padding:2px 7px;border-radius:5px;color:var(--accent);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🐟 AquaMind · <span>Neural Net Lab</span></h1>
+  <div class="sub">A hands-on sandbox for the concepts behind Stage&nbsp;6 re-ID. Press play, poke things, watch what moves.</div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-view="grad">① Gradient Descent</div>
+  <div class="tab" data-view="net">② The Network</div>
+  <div class="tab" data-view="tensor">③ Tensor Anatomy</div>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ VIEW 1: GRADIENT DESCENT ============ -->
+  <div class="view active" id="grad">
+    <div class="card">
+      <h3>The loss bowl — watch a weight roll downhill</h3>
+      <div class="sub">The curve is the <b>loss</b> (how wrong the model is) for one weight's value.
+      The ball is the weight. Each step, we measure the <b>slope (gradient)</b> and step downhill.</div>
+      <canvas id="bowl" height="360"></canvas>
+      <div class="controls">
+        <button class="act" id="g-play">▶ Play</button>
+        <button class="act ghost" id="g-step">Step once</button>
+        <button class="act ghost" id="g-reset">↺ Reset</button>
+        <label class="sl">learning rate (step size)
+          <input type="range" id="g-lr" min="0.01" max="0.95" step="0.01" value="0.15">
+        </label>
+        <div class="stat">weight: <b id="g-w">3.50</b></div>
+        <div class="stat">loss: <b id="g-loss">13.25</b></div>
+        <div class="stat">gradient (slope): <b id="g-grad">7.00</b></div>
+        <div class="stat">step: <b id="g-i">0</b></div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--blue)"></span>loss curve</span>
+        <span><span class="dot" style="background:var(--red)"></span>gradient = slope here</span>
+        <span><span class="dot" style="background:var(--orange)"></span>the weight (ball)</span>
+        <span><span class="dot" style="background:var(--green)"></span>goal: lowest error</span>
+      </div>
+      <div class="note" id="g-note">Start point: weight sits up the side of the bowl → big error. Hit <b>▶ Play</b> and watch it roll down.</div>
+    </div>
+    <div class="card">
+      <h3>Try this 🧪</h3>
+      <div class="sub">
+        1. Press <b>Play</b> with the default rate — smooth roll to the bottom.<br>
+        2. Now crank the learning rate to <b>0.9+</b> and reset — watch it <b>overshoot and bounce</b> (too-big steps). This is why learning rate matters.<br>
+        3. Set it very low (<b>0.02</b>) — it crawls, needs many steps. Too small = slow.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ VIEW 2: THE NETWORK ============ -->
+  <div class="view" id="net">
+    <div class="card">
+      <h3>One crop through the head — forward pass, guess, then backprop</h3>
+      <div class="sub">Left = the crop's fingerprint (shrunk to 6 numbers here so you can see it).
+      Middle wires = the <b>weights</b>. Right = 5 fish scores. Fire a crop and follow the flow.</div>
+      <canvas id="netcanvas" height="420"></canvas>
+      <div class="controls">
+        <button class="act" id="n-forward">▶ Fire a crop (forward pass)</button>
+        <button class="act ghost" id="n-back" disabled>← Backprop (assign blame)</button>
+        <button class="act ghost" id="n-reset">↺ New crop</button>
+        <div class="stat">true fish: <b id="n-true">—</b></div>
+        <div class="stat">guess: <b id="n-guess">—</b></div>
+        <div class="stat">loss: <b id="n-loss">—</b></div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--blue)"></span>positive weight/value</span>
+        <span><span class="dot" style="background:var(--red)"></span>negative weight/value</span>
+        <span>wire thickness = weight size · brightness = active</span>
+      </div>
+      <div class="note" id="n-note">Press <b>Fire a crop</b>. The fingerprint lights up, flows along the wires, and the 5 scores appear. Highest score = the guess.</div>
+    </div>
+    <div class="card">
+      <h3>What you're seeing 👀</h3>
+      <div class="sub">
+        • Every one of the 6 inputs connects to every one of the 5 outputs → <b>6 × 5 = 30 wires = 30 weights</b> (your real head: 384 × 5 ≈ 1,920).<br>
+        • <b>Forward:</b> each output = sum of (input × wire weight). Highest wins = the guess.<br>
+        • <b>Backprop:</b> if the guess is wrong, wires leading to the answer get "blamed" — they glow by how much they'd change. That glow <b>is</b> the gradient per weight.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ VIEW 3: TENSOR ANATOMY ============ -->
+  <div class="view" id="tensor">
+    <div class="card">
+      <h3>A fish crop as a tensor — <code>(3, 224, 224)</code></h3>
+      <div class="sub">Three stacked grids: Red, Green, Blue. Each cell holds <b>one number</b> (a brightness).
+      Here it's zoomed to <b id="t-grid">10×10</b> so you can see it — the real crop is 224×224.
+      <b>Click any cell</b> to punch through all three layers at that spot.</div>
+      <div class="stage"><div class="cube" id="cube"></div></div>
+      <div class="tinfo">
+        <div class="stat">address: <b id="t-addr">click a cell</b></div>
+        <div class="stat">red <b id="t-r">—</b></div>
+        <div class="stat">green <b id="t-g">—</b></div>
+        <div class="stat">blue <b id="t-b">—</b></div>
+        <div>the pixel's colour → <div class="swatch" id="t-swatch"></div></div>
+      </div>
+      <div class="note" id="t-note">
+        Notice: to get one pixel's full colour you read the <b>same (row, col)</b> out of all three layers —
+        <code>t[0,r,c]</code>, <code>t[1,r,c]</code>, <code>t[2,r,c]</code>. The colour is <b>scattered across the layers</b>, not stored in one spot.
+      </div>
+    </div>
+    <div class="card">
+      <h3>Shape vs. contents 🗺️</h3>
+      <div class="sub">The <b>shape</b> is the map, not the data:</div>
+      <div class="ladder" style="margin-top:10px">
+        <div class="rung"><b>3</b> &nbsp;channels (R,G,B layers)</div>
+        <div class="rung"><b>224</b> &nbsp;rows (height)</div>
+        <div class="rung"><b>224</b> &nbsp;columns (width)</div>
+        <div class="rung">= <b>150,528</b> numbers inside</div>
+      </div>
+      <h3 style="margin-top:18px">The dimension ladder 🪜</h3>
+      <div class="ladder">
+        <div class="rung"><b>0-D</b> scalar — one number <code>-1.33</code></div>
+        <div class="rung"><b>1-D</b> vector — a row <code>[..]</code></div>
+        <div class="rung"><b>2-D</b> matrix — one grid <code>224×224</code></div>
+        <div class="rung"><b>3-D</b> tensor — your crop <code>(3,224,224)</code></div>
+        <div class="rung"><b>4-D</b> tensor — a batch <code>(32,3,224,224)</code></div>
+      </div>
+      <div class="note" style="margin-top:14px">A <b>tensor</b> is just the umbrella word for a grid of numbers with <i>any</i> number of dimensions. Add a dimension → same thing, one level up.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.view).classList.add('active');
+    resizeAll();
+  };
+});
+
+/* ================= VIEW 1: GRADIENT DESCENT ================= */
+const bowl=document.getElementById('bowl'), bx=bowl.getContext('2d');
+let gW=3.5, gI=0, gPlaying=false, gTimer=null;
+const lossFn=w=>w*w+1, gradFn=w=>2*w;
+
+function drawBowl(){
+  const W=bowl.width, H=bowl.height, pad=40;
+  bx.clearRect(0,0,W,H);
+  const xmin=-4,xmax=4,ymin=0,ymax=18;
+  const sx=w=>pad+(w-xmin)/(xmax-xmin)*(W-2*pad);
+  const sy=l=>H-pad-(l-ymin)/(ymax-ymin)*(H-2*pad);
+  // axes
+  bx.strokeStyle='#2d3644'; bx.lineWidth=1;
+  bx.beginPath(); bx.moveTo(pad,sy(0)); bx.lineTo(W-pad,sy(0)); bx.stroke();
+  // curve
+  bx.strokeStyle='#3b82f6'; bx.lineWidth=3; bx.beginPath();
+  for(let w=xmin;w<=xmax;w+=0.05){const X=sx(w),Y=sy(lossFn(w));w===xmin?bx.moveTo(X,Y):bx.lineTo(X,Y);}
+  bx.stroke();
+  // goal star
+  bx.fillStyle='#22c55e'; star(sx(0),sy(1),9);
+  // tangent (gradient) at current point
+  const g=gradFn(gW), L=lossFn(gW);
+  bx.strokeStyle='#ef4444'; bx.lineWidth=2.5; bx.setLineDash([7,5]); bx.beginPath();
+  const t1=gW-1.2,t2=gW+1.2;
+  bx.moveTo(sx(t1),sy(L+g*(t1-gW))); bx.lineTo(sx(t2),sy(L+g*(t2-gW))); bx.stroke();
+  bx.setLineDash([]);
+  // ball
+  bx.fillStyle='#f59e0b'; bx.beginPath(); bx.arc(sx(gW),sy(L),9,0,7); bx.fill();
+  bx.strokeStyle='#0e1116'; bx.lineWidth=2; bx.stroke();
+  // labels
+  bx.fillStyle='#8b98a5'; bx.font='12px sans-serif';
+  bx.fillText('value of ONE weight →', W-190, H-14);
+  bx.save(); bx.translate(16,H/2); bx.rotate(-Math.PI/2); bx.fillText('loss (error)',0,0); bx.restore();
+  // update stats
+  document.getElementById('g-w').textContent=gW.toFixed(2);
+  document.getElementById('g-loss').textContent=L.toFixed(2);
+  document.getElementById('g-grad').textContent=g.toFixed(2);
+  document.getElementById('g-i').textContent=gI;
+}
+function star(cx,cy,r){bx.beginPath();for(let i=0;i<10;i++){const a=Math.PI/5*i-Math.PI/2;const rr=i%2?r*0.45:r;bx.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr);}bx.closePath();bx.fill();}
+function gStep(){
+  const lr=parseFloat(document.getElementById('g-lr').value);
+  gW=gW-lr*gradFn(gW); gI++;
+  drawBowl();
+  const note=document.getElementById('g-note');
+  if(Math.abs(gradFn(gW))<0.05){note.innerHTML='🎉 Reached the bottom — slope ≈ 0, error is minimal. The weight is tuned. <b>This is a trained weight.</b>';gStop();}
+  else note.innerHTML=`Slope here = <b>${gradFn(gW).toFixed(2)}</b> → step <b>${gradFn(gW)>0?'left':'right'}</b> (downhill). Bigger slope = bigger step.`;
+}
+function gPlay(){if(gPlaying){gStop();return;}gPlaying=true;document.getElementById('g-play').textContent='⏸ Pause';gTimer=setInterval(gStep,220);}
+function gStop(){gPlaying=false;document.getElementById('g-play').textContent='▶ Play';clearInterval(gTimer);}
+function gReset(){gStop();gW=3.5;gI=0;drawBowl();document.getElementById('g-note').innerHTML='Reset. Weight back up the side of the bowl. Press <b>▶ Play</b>.';}
+document.getElementById('g-play').onclick=gPlay;
+document.getElementById('g-step').onclick=()=>{gStop();gStep();};
+document.getElementById('g-reset').onclick=gReset;
+document.getElementById('g-lr').oninput=drawBowl;
+
+/* ================= VIEW 2: THE NETWORK ================= */
+const nc=document.getElementById('netcanvas'), ncx=nc.getContext('2d');
+const NIN=6, NOUT=5;
+const FISH=['fish 0','fish 1','fish 2','fish 3','fish 4'];
+let weights=[], inputs=[], outputs=[], trueFish=0, guessFish=null, animT=0, animRAF=null, showBlame=false;
+
+function randWeights(){weights=[];for(let i=0;i<NIN;i++){weights[i]=[];for(let o=0;o<NOUT;o++)weights[i][o]=(Math.random()*2-1);}}
+function newCrop(){
+  trueFish=Math.floor(Math.random()*NOUT);
+  inputs=[];for(let i=0;i<NIN;i++)inputs[i]=(Math.random()*2-1);
+  // nudge inputs so the true fish is *somewhat* learnable but not guaranteed (untrained net)
+  outputs=new Array(NOUT).fill(0); guessFish=null; showBlame=false; animT=0;
+  document.getElementById('n-true').textContent=FISH[trueFish];
+  document.getElementById('n-guess').textContent='—';
+  document.getElementById('n-loss').textContent='—';
+  document.getElementById('n-back').disabled=true;
+  document.getElementById('n-note').innerHTML='New crop loaded. True fish is hidden from the network — press <b>Fire a crop</b> to see its guess.';
+  drawNet(0);
+}
+function computeOutputs(){
+  outputs=new Array(NOUT).fill(0);
+  for(let o=0;o<NOUT;o++){let s=0;for(let i=0;i<NIN;i++)s+=inputs[i]*weights[i][o];outputs[o]=s;}
+  let mx=-1e9;for(let o=0;o<NOUT;o++)if(outputs[o]>mx){mx=outputs[o];guessFish=o;}
+}
+function nodePos(W,H){
+  const padY=40, inX=W*0.16, outX=W*0.84;
+  const inYs=[],outYs=[];
+  for(let i=0;i<NIN;i++)inYs.push(padY+(H-2*padY)*i/(NIN-1));
+  for(let o=0;o<NOUT;o++)outYs.push(padY+(H-2*padY)*o/(NOUT-1));
+  return {inX,outX,inYs,outYs};
+}
+function drawNet(prog){
+  const W=nc.width,H=nc.height; ncx.clearRect(0,0,W,H);
+  const P=nodePos(W,H);
+  // wires
+  for(let i=0;i<NIN;i++)for(let o=0;o<NOUT;o++){
+    const w=weights[i][o];
+    let alpha=0.18+0.5*Math.min(1,Math.abs(w));
+    let lw=0.5+2.6*Math.abs(w);
+    let col=w>=0?'59,130,246':'239,68,68';
+    if(showBlame){
+      // blame: wires into the TRUE fish and away from wrong guess glow
+      const blame=(o===trueFish?1:0)*Math.abs(inputs[i]);
+      if(o===trueFish){col='34,197,94';alpha=0.25+0.6*Math.min(1,Math.abs(inputs[i]));lw=1+3*Math.min(1,Math.abs(inputs[i]));}
+      else if(o===guessFish && guessFish!==trueFish){col='245,158,11';alpha=0.25+0.5*Math.min(1,Math.abs(inputs[i]));lw=1+2.5*Math.min(1,Math.abs(inputs[i]));}
+      else alpha=0.08;
+    } else if(prog<1){
+      // forward animation: reveal wires left→right
+      const reveal=Math.max(0,Math.min(1,(prog*1.6)-i*0.04));
+      alpha*=reveal;
+    }
+    ncx.strokeStyle=`rgba(${col},${alpha})`; ncx.lineWidth=lw;
+    ncx.beginPath(); ncx.moveTo(P.inX,P.inYs[i]); ncx.lineTo(P.outX,P.outYs[o]); ncx.stroke();
+  }
+  // input nodes
+  for(let i=0;i<NIN;i++){
+    const v=inputs[i]||0, on=prog>0.05;
+    ncx.fillStyle=on?(v>=0?'#3b82f6':'#ef4444'):'#2d3644';
+    ncx.globalAlpha=on?(0.35+0.55*Math.min(1,Math.abs(v))):1;
+    circle(P.inX,P.inYs[i],13); ncx.globalAlpha=1;
+    ncx.fillStyle='#e6edf3';ncx.font='11px sans-serif';ncx.textAlign='right';
+    ncx.fillText(on?v.toFixed(2):'', P.inX-20, P.inYs[i]+4);
+  }
+  ncx.textAlign='center';ncx.fillStyle='#8b98a5';ncx.font='12px sans-serif';
+  ncx.fillText('fingerprint (6 of 384)', P.inX, 22);
+  ncx.fillText('5 fish scores', P.outX, 22);
+  // output nodes
+  const revealOut=prog>=1||showBlame;
+  for(let o=0;o<NOUT;o++){
+    const v=outputs[o]||0;
+    const isGuess=revealOut&&o===guessFish, isTrue=showBlame&&o===trueFish;
+    ncx.fillStyle=revealOut?(o===guessFish?'#f59e0b':'#1c232d'):'#2d3644';
+    if(showBlame&&o===trueFish)ncx.fillStyle='#22c55e';
+    circle(P.outX,P.outYs[o],16);
+    if(isGuess||isTrue){ncx.strokeStyle=isTrue?'#22c55e':'#f59e0b';ncx.lineWidth=3;ncx.beginPath();ncx.arc(P.outX,P.outYs[o],16,0,7);ncx.stroke();}
+    ncx.fillStyle='#e6edf3';ncx.font='11px sans-serif';ncx.textAlign='left';
+    ncx.fillText(FISH[o]+(revealOut?'  '+v.toFixed(2):''), P.outX+24, P.outYs[o]+4);
+    ncx.textAlign='center';
+  }
+}
+function circle(x,y,r){ncx.beginPath();ncx.arc(x,y,r,0,7);ncx.fill();}
+function fireForward(){
+  computeOutputs();
+  cancelAnimationFrame(animRAF); animT=0;
+  const run=()=>{
+    animT+=0.03; drawNet(Math.min(1,animT));
+    if(animT<1)animRAF=requestAnimationFrame(run);
+    else{
+      const correct=guessFish===trueFish;
+      const loss=correct?0.4:(1.5+Math.random()).toFixed(2);
+      document.getElementById('n-guess').textContent=FISH[guessFish];
+      document.getElementById('n-loss').textContent=correct?'0.40 (low!)':loss;
+      document.getElementById('n-back').disabled=false;
+      document.getElementById('n-note').innerHTML=correct
+        ? `✅ Guessed <b>${FISH[guessFish]}</b> — matches the true fish! Low loss. (An untrained net gets this right ~1 in 5 by luck.) Try backprop to see reinforcement.`
+        : `❌ Guessed <b>${FISH[guessFish]}</b> but truth is <b>${FISH[trueFish]}</b>. High loss. Now hit <b>← Backprop</b> to see which wires get blamed.`;
+    }
+  };
+  run();
+}
+function fireBack(){
+  showBlame=true; drawNet(1);
+  const correct=guessFish===trueFish;
+  document.getElementById('n-note').innerHTML=correct
+    ? '🟢 Green wires (into the correct fish) are <b>reinforced</b> — nudged to make this answer even stronger next time.'
+    : '🟢 Green wires (into the <b>true</b> fish) get pushed UP · 🟠 orange wires (into the <b>wrong</b> guess) get pushed DOWN. Each wire\'s glow = its gradient. That\'s one learning step.';
+}
+document.getElementById('n-forward').onclick=fireForward;
+document.getElementById('n-back').onclick=fireBack;
+document.getElementById('n-reset').onclick=newCrop;
+
+/* ================= VIEW 3: TENSOR ANATOMY ================= */
+const GRID=10, CELL=24; // px per cell incl gap
+const tData={0:[],1:[],2:[]}; // R,G,B brightness 0-255
+function buildTensor(){
+  for(let c=0;c<3;c++){tData[c]=[];for(let r=0;r<GRID;r++){tData[c][r]=[];for(let k=0;k<GRID;k++)tData[c][r][k]=Math.floor(Math.random()*256);}}
+  const cube=document.getElementById('cube'); cube.innerHTML='';
+  const size=GRID*CELL;
+  const specs=[{c:2,cls:'blue',z:130,name:'BLUE  t[2]'},{c:1,cls:'green',z:65,name:'GREEN t[1]'},{c:0,cls:'red',z:0,name:'RED   t[0]'}];
+  specs.forEach(sp=>{
+    const layer=document.createElement('div');
+    layer.className='layer '+sp.cls;
+    layer.style.gridTemplateColumns=`repeat(${GRID},20px)`;
+    layer.style.transform=`translateZ(${sp.z}px)`;
+    layer.style.left=(-size/2)+'px'; layer.style.top=(-size/2)+'px';
+    for(let r=0;r<GRID;r++)for(let k=0;k<GRID;k++){
+      const cell=document.createElement('div');
+      cell.className='cell';
+      const v=tData[sp.c][r][k];
+      const shade=sp.c===0?`rgb(${v},30,30)`:sp.c===1?`rgb(30,${v},30)`:`rgb(30,30,${v})`;
+      cell.style.background=shade;
+      cell.dataset.r=r; cell.dataset.k=k;
+      cell.onclick=()=>selectCell(r,k);
+      layer.appendChild(cell);
+    }
+    cube.appendChild(layer);
+    const lab=document.createElement('div');
+    lab.className='lbl3d'; lab.textContent=sp.name;
+    lab.style.transform=`translateZ(${sp.z}px) translate(${size/2+14}px,${-size/2}px)`;
+    cube.appendChild(lab);
+  });
+}
+function selectCell(r,k){
+  document.querySelectorAll('#cube .cell').forEach(c=>{
+    c.classList.toggle('sel', +c.dataset.r===r && +c.dataset.k===k);
+  });
+  const R=tData[0][r][k],G=tData[1][r][k],B=tData[2][r][k];
+  document.getElementById('t-addr').textContent=`row ${r}, col ${k}`;
+  document.getElementById('t-r').textContent=R;
+  document.getElementById('t-g').textContent=G;
+  document.getElementById('t-b').textContent=B;
+  document.getElementById('t-swatch').style.background=`rgb(${R},${G},${B})`;
+  document.getElementById('t-note').innerHTML=
+    `This pixel = <code>t[0,${r},${k}]=${R}</code> · <code>t[1,${r},${k}]=${G}</code> · <code>t[2,${r},${k}]=${B}</code> → combined they make the colour in the swatch. Read from <b>three</b> layers, same (row,col).`;
+}
+document.getElementById('t-grid').textContent=GRID+'×'+GRID;
+
+/* ---------- responsive ---------- */
+function resizeAll(){
+  [bowl,nc].forEach(c=>{const w=c.parentElement.clientWidth-40;c.width=Math.max(320,w);});
+  drawBowl(); drawNet(showBlame?1:(guessFish!==null?1:0));
+}
+window.addEventListener('resize',resizeAll);
+randWeights(); newCrop(); buildTensor(); resizeAll();
+</script>
+</body>
+</html>
