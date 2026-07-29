@@ -61,6 +61,27 @@
   .rung{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px}
   .rung b{color:var(--accent)}
   code{background:var(--panel2);padding:2px 7px;border-radius:5px;color:var(--accent);font-size:13px}
+  /* many-weights tab */
+  .grid6{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:10px}
+  @media(max-width:820px){.grid6{grid-template-columns:1fr}}
+  .mini{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 10px 10px}
+  .mini canvas{background:transparent;border-radius:0}
+  .mini-cap{font-size:12.5px;font-weight:700;margin-bottom:2px}
+  .mini-cap em{color:var(--muted);font-weight:400;font-style:normal}
+  .mini-info{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px}
+  .mini-info b{color:var(--red)}
+  .bigstat{background:var(--panel2);border:1px solid var(--accent);border-radius:9px;
+           padding:10px 18px;font-size:14px}
+  .bigstat b{color:var(--accent);font-size:19px;font-variant-numeric:tabular-nums}
+  .mathbox{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:14px 16px;
+           margin-top:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+           color:var(--muted);line-height:1.7;overflow-x:auto}
+  .mathbox .hi{color:var(--ink)}
+  .mathbox .tot{color:var(--accent);font-weight:700}
+  .mathbox .big{color:var(--orange)}
+  button.pick{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+              padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  button.pick.on{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -73,6 +94,7 @@
   <div class="tab active" data-view="grad">① Gradient Descent</div>
   <div class="tab" data-view="net">② The Network</div>
   <div class="tab" data-view="tensor">③ Tensor Anatomy</div>
+  <div class="tab" data-view="many">④ One Loss, Many Weights</div>
 </div>
 
 <div class="wrap">
@@ -135,6 +157,12 @@
         <span>wire thickness = weight size · brightness = active</span>
       </div>
       <div class="note" id="n-note">Press <b>Fire a crop</b>. The fingerprint lights up, flows along the wires, and the 5 scores appear. Highest score = the guess.</div>
+
+      <h3 style="margin-top:20px">🧮 Show me the actual arithmetic</h3>
+      <div class="sub">Every score is just <b>trait × wire</b>, six times, added up. Pick a fish to see its sum
+        line by line — these are the real numbers on the canvas above.</div>
+      <div class="controls" style="margin-top:8px" id="n-picks"></div>
+      <div class="mathbox" id="n-math">Fire a crop first, then pick a fish. ☝️</div>
     </div>
     <div class="card">
       <h3>What you're seeing 👀</h3>
@@ -184,6 +212,61 @@
         <div class="rung"><b>4-D</b> tensor — a batch <code>(32,3,224,224)</code></div>
       </div>
       <div class="note" style="margin-top:14px">A <b>tensor</b> is just the umbrella word for a grid of numbers with <i>any</i> number of dimensions. Add a dimension → same thing, one level up.</div>
+    </div>
+  </div>
+
+  <!-- ============ VIEW 4: ONE LOSS, MANY WEIGHTS ============ -->
+  <div class="view" id="many">
+    <div class="card">
+      <h3>Six weights at once — one shared height, six different tilts</h3>
+      <div class="sub">Six hills, one per weight (a real model has millions; here are 6).
+        Each hill asks the same question: <b>"if I froze every other weight and turned only THIS dial,
+        how would the whole model's loss change?"</b> All six use the <b>same vertical scale</b>, so heights
+        are directly comparable.</div>
+
+      <div class="controls" style="margin-bottom:4px">
+        <button class="act" id="m-play">▶ Play</button>
+        <button class="act ghost" id="m-step">Step once</button>
+        <button class="act ghost" id="m-reset">↺ Reset</button>
+        <label class="sl">learning rate
+          <input type="range" id="m-lr" min="0.01" max="0.50" step="0.01" value="0.12">
+        </label>
+        <div class="bigstat">LOSS (shared by all 6): <b id="m-loss">—</b></div>
+        <div class="stat">step: <b id="m-i">0</b></div>
+      </div>
+
+      <div class="grid6" id="mini-wrap"></div>
+
+      <div class="legend">
+        <span><span class="dot" style="background:var(--blue)"></span>this weight's slice of the landscape</span>
+        <span><span class="dot" style="background:var(--orange)"></span>the weight's current value</span>
+        <span><span class="dot" style="background:var(--red)"></span>its own tilt (gradient)</span>
+        <span><span class="dot" style="background:var(--accent)"></span>the shared loss height</span>
+      </div>
+      <div class="note" id="m-note">
+        Look at the <b>cyan dashed line</b>: it sits at the <b>same height in all six boxes</b>. That's the one shared
+        loss. Now look at the <b>red tangents</b> — every one is tilted differently. <b>One score, six different corrections.</b>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>…and this is the only part MLflow ever sees 📉</h3>
+      <div class="sub">Below is the shared loss, logged once per step — <code>mlflow.log_metric("train_loss", loss.item(), step=i)</code>.
+        Six weights moved, six different gradients were computed, and <b>none of that appears here</b>. Just the one number.</div>
+      <canvas id="mlf" height="220"></canvas>
+      <div class="note">The chart's horizontal axis is <b>time (steps)</b> — not a weight value. That's the difference
+        between this chart and the six hills above: same vertical axis (loss), completely different horizontal one.</div>
+    </div>
+
+    <div class="card">
+      <h3>Try this 🧪</h3>
+      <div class="sub">
+        1. <b>Step once</b> and compare the six <b>tilt</b> numbers — all different, all from the same loss.<br>
+        2. Watch <b>w₃ (steep)</b> vs <b>w₅ (flat)</b>: w₃ dives fast, w₅ barely crawls. Steep hill = big correction.<br>
+        3. Press <b>Play</b> — every ball lands in its own valley at its own pace, and the cyan line sinks to the floor.<br>
+        4. Reset, set the rate to <b>0.45+</b> and play: <b>w₃ starts bouncing</b> while the gentle ones stay calm.
+        One learning rate is shared by all weights — that's why a rate that suits one can wreck another. 💥
+      </div>
     </div>
   </div>
 
@@ -281,6 +364,41 @@ function computeOutputs(){
   for(let o=0;o<NOUT;o++){let s=0;for(let i=0;i<NIN;i++)s+=inputs[i]*weights[i][o];outputs[o]=s;}
   let mx=-1e9;for(let o=0;o<NOUT;o++)if(outputs[o]>mx){mx=outputs[o];guessFish=o;}
 }
+/* ---- show the real multiply-and-add behind one fish's score ---- */
+let pickedFish=null;
+(function buildPicks(){
+  const wrap=document.getElementById('n-picks');
+  for(let o=0;o<NOUT;o++){
+    const b=document.createElement('button');
+    b.className='pick'; b.textContent=FISH[o];
+    b.onclick=()=>showMath(o);
+    wrap.appendChild(b);
+  }
+})();
+function showMath(o){
+  pickedFish=o;
+  document.querySelectorAll('#n-picks .pick').forEach((b,i)=>b.classList.toggle('on',i===o));
+  const box=document.getElementById('n-math');
+  if(guessFish===null){box.innerHTML='Fire a crop first, then pick a fish. ☝️';return;}
+  const pad=n=>(n>=0?' ':'')+n.toFixed(2);
+  let lines='', total=0;
+  for(let i=0;i<NIN;i++){
+    const p=inputs[i]*weights[i][o]; total+=p;
+    lines+=`trait ${i+1}: <span class="hi">${pad(inputs[i])}</span> × `+
+           `<span class="hi">${pad(weights[i][o])}</span> = `+
+           `<span class="${Math.abs(p)>0.35?'big':''}">${pad(p)}</span><br>`;
+  }
+  const isGuess=o===guessFish, isTrue=o===trueFish;
+  box.innerHTML=
+    `<b class="hi">score for ${FISH[o]}</b>`+
+    `${isGuess?' &nbsp;🏆 highest → this is the guess':''}${isTrue?' &nbsp;✅ this is the true fish':''}<br><br>`+
+    lines+
+    `<span style="color:#2d3644">───────────────────────────</span><br>`+
+    `total = <span class="tot">${pad(total)}</span>`+
+    `<br><br><span style="font-size:12px">Six multiplications, one addition. That is the entire forward pass for this fish — `+
+    `and it happens for all 5, then the biggest total wins.</span>`;
+}
+
 function nodePos(W,H){
   const padY=40, inX=W*0.16, outX=W*0.84;
   const inYs=[],outYs=[];
@@ -353,6 +471,7 @@ function fireForward(){
       document.getElementById('n-note').innerHTML=correct
         ? `✅ Guessed <b>${FISH[guessFish]}</b> — matches the true fish! Low loss. (An untrained net gets this right ~1 in 5 by luck.) Try backprop to see reinforcement.`
         : `❌ Guessed <b>${FISH[guessFish]}</b> but truth is <b>${FISH[trueFish]}</b>. High loss. Now hit <b>← Backprop</b> to see which wires get blamed.`;
+      showMath(guessFish);
     }
   };
   run();
@@ -414,13 +533,155 @@ function selectCell(r,k){
 }
 document.getElementById('t-grid').textContent=GRID+'×'+GRID;
 
+/* ================= VIEW 4: ONE LOSS, MANY WEIGHTS =================
+   A real 6-weight toy model:  loss = C + Σ aᵢ·wᵢ²
+   - the TOTAL loss is one number, shared by every weight
+   - each weight's gradient is 2·aᵢ·wᵢ — all different
+   - weight i's "slice" = aᵢ·wᵢ² + (everything else, held frozen),
+     which passes exactly through the shared total. So the equal
+     heights you see are arithmetic, not a drawing trick.        */
+const NW=6, MC=0.5;
+const MA   =[1.00, 0.35, 2.20, 0.80, 0.15, 1.40];   // steepness per weight
+const MTAG =['','gentle','steep','','very flat','']; // caption hints
+const MNAME=['w₁','w₂','w₃','w₄','w₅','w₆'];
+const MW0  =[3.00,-2.60, 1.40,-3.20, 2.00, 0.90];
+let mW=MW0.slice(), mI=0, mHist=[], mPlaying=false, mTimer=null;
+
+const mTotal=ws=>ws.reduce((s,w,i)=>s+MA[i]*w*w, MC);
+const mGrad =(i,ws)=>2*MA[i]*ws[i];
+const MYMAX = mTotal(MW0)*1.06;          // shared vertical scale
+const MXR   = 4.4;                       // shared horizontal range
+
+/* build the six boxes once */
+const miniCv=[], miniInfo=[];
+(function buildMinis(){
+  const wrap=document.getElementById('mini-wrap');
+  for(let i=0;i<NW;i++){
+    const cell=document.createElement('div'); cell.className='mini';
+    const cap=document.createElement('div'); cap.className='mini-cap';
+    cap.innerHTML=`${MNAME[i]} ${MTAG[i]?`<em>· ${MTAG[i]}</em>`:''}`;
+    const cv=document.createElement('canvas'); cv.height=140;
+    const info=document.createElement('div'); info.className='mini-info';
+    cell.append(cap,cv,info); wrap.appendChild(cell);
+    miniCv.push(cv); miniInfo.push(info);
+  }
+})();
+
+function drawMini(i){
+  const cv=miniCv[i], c=cv.getContext('2d'), W=cv.width, H=cv.height, pad=12;
+  c.clearRect(0,0,W,H);
+  const sx=w=>pad+(w+MXR)/(2*MXR)*(W-2*pad);
+  const sy=l=>H-pad-Math.max(0,Math.min(l,MYMAX))/MYMAX*(H-2*pad);
+  const L=mTotal(mW);
+  const rest=L-MA[i]*mW[i]*mW[i];            // frozen contribution of the other five
+  const slice=w=>rest+MA[i]*w*w;             // this weight's slice — passes through L
+
+  c.strokeStyle='#2d3644'; c.lineWidth=1;
+  c.beginPath(); c.moveTo(pad,H-pad); c.lineTo(W-pad,H-pad); c.stroke();
+
+  c.strokeStyle='#3b82f6'; c.lineWidth=2.2; c.beginPath();
+  let started=false;
+  for(let w=-MXR;w<=MXR;w+=0.05){
+    const v=slice(w); if(v>MYMAX){started=false;continue;}
+    const X=sx(w),Y=sy(v);
+    started?c.lineTo(X,Y):c.moveTo(X,Y); started=true;
+  }
+  c.stroke();
+
+  // the shared loss height — identical pixel row in all six boxes
+  c.strokeStyle='#38bdf8'; c.lineWidth=1.2; c.setLineDash([4,4]);
+  c.beginPath(); c.moveTo(0,sy(L)); c.lineTo(W,sy(L)); c.stroke(); c.setLineDash([]);
+
+  // this weight's own tilt
+  const g=mGrad(i,mW);
+  c.strokeStyle='#ef4444'; c.lineWidth=2; c.setLineDash([6,4]); c.beginPath();
+  const t1=mW[i]-1.1, t2=mW[i]+1.1;
+  c.moveTo(sx(t1),sy(L+g*(t1-mW[i]))); c.lineTo(sx(t2),sy(L+g*(t2-mW[i]))); c.stroke();
+  c.setLineDash([]);
+
+  c.fillStyle='#22c55e'; c.beginPath(); c.arc(sx(0),sy(rest),3.5,0,7); c.fill();
+  c.fillStyle='#f59e0b'; c.beginPath(); c.arc(sx(mW[i]),sy(L),6,0,7); c.fill();
+
+  miniInfo[i].innerHTML=`value ${mW[i].toFixed(2)} · tilt <b>${g.toFixed(2)}</b>`;
+}
+
+function drawMlf(){
+  const cv=document.getElementById('mlf'), c=cv.getContext('2d');
+  const W=cv.width,H=cv.height,pad=40;
+  c.clearRect(0,0,W,H);
+  const maxS=Math.max(20,mHist.length-1);
+  const sx=s=>pad+s/maxS*(W-2*pad);
+  const sy=l=>H-pad-Math.max(0,Math.min(l,MYMAX))/MYMAX*(H-2*pad);
+  c.strokeStyle='#2d3644'; c.lineWidth=1;
+  c.beginPath(); c.moveTo(pad,H-pad); c.lineTo(W-pad,H-pad);
+  c.moveTo(pad,pad); c.lineTo(pad,H-pad); c.stroke();
+  c.fillStyle='#8b98a5'; c.font='12px sans-serif';
+  c.fillText('training steps →',W-pad-110,H-pad+22);
+  c.save(); c.translate(16,H/2); c.rotate(-Math.PI/2);
+  c.fillText('train_loss',0,0); c.restore();
+
+  if(mHist.length){
+    c.strokeStyle='#38bdf8'; c.lineWidth=2.5; c.beginPath();
+    mHist.forEach((l,s)=>{const X=sx(s),Y=sy(l);s===0?c.moveTo(X,Y):c.lineTo(X,Y);});
+    c.stroke();
+    c.fillStyle='#38bdf8';
+    mHist.forEach((l,s)=>{c.beginPath();c.arc(sx(s),sy(l),3,0,7);c.fill();});
+  }
+}
+
+function drawMany(){
+  for(let i=0;i<NW;i++) drawMini(i);
+  drawMlf();
+  document.getElementById('m-loss').textContent=mTotal(mW).toFixed(2);
+  document.getElementById('m-i').textContent=mI;
+}
+
+function mStepOnce(){
+  const lr=parseFloat(document.getElementById('m-lr').value);
+  const g=mW.map((_,i)=>mGrad(i,mW));               // all gradients from the SAME loss
+  for(let i=0;i<NW;i++) mW[i]=mW[i]-lr*g[i];        // every weight nudges by its own tilt
+  mW=mW.map(w=>Math.max(-1e3,Math.min(1e3,w)));
+  mI++; mHist.push(mTotal(mW));
+  drawMany();
+  const note=document.getElementById('m-note'), L=mTotal(mW);
+  if(L>mHist[0]*1.5){
+    note.innerHTML='💥 <b>Diverging</b> — the learning rate is too big for the steep weight (w₃). '+
+      'It overshoots so hard it climbs higher each step. The gentle weights are fine. '+
+      '<b>One rate, shared by all — and the steepest weight is the one that breaks first.</b>';
+  } else if(L<0.8){
+    note.innerHTML='🎉 <b>All six landed.</b> Every tilt ≈ 0, the cyan line is on the floor, and the MLflow '+
+      'curve below has flattened. That flattening is your cue to stop training.';
+  } else {
+    note.innerHTML=`Loss is <b>${L.toFixed(2)}</b> — the <b>same number in all six boxes</b> (cyan line, same height). `+
+      `But the six tilts are ${mW.map((_,i)=>mGrad(i,mW).toFixed(1)).join(' · ')} — <b>all different</b>. One score, six corrections.`;
+  }
+}
+function mStop(){mPlaying=false;clearInterval(mTimer);document.getElementById('m-play').textContent='▶ Play';}
+function mPlay(){
+  if(mPlaying){mStop();return;}
+  mPlaying=true; document.getElementById('m-play').textContent='⏸ Pause';
+  mTimer=setInterval(()=>{mStepOnce(); if(mI>60) mStop();},260);
+}
+function mReset(){
+  mStop(); mW=MW0.slice(); mI=0; mHist=[mTotal(mW)]; drawMany();
+  document.getElementById('m-note').innerHTML=
+    'Reset. Look at the <b>cyan dashed line</b> — <b>same height in all six boxes</b>. That\'s the one shared loss. '+
+    'The <b>red tangents</b> are all tilted differently. <b>One score, six different corrections.</b>';
+}
+document.getElementById('m-play').onclick=mPlay;
+document.getElementById('m-step').onclick=()=>{mStop();mStepOnce();};
+document.getElementById('m-reset').onclick=mReset;
+
 /* ---------- responsive ---------- */
 function resizeAll(){
   [bowl,nc].forEach(c=>{const w=c.parentElement.clientWidth-40;c.width=Math.max(320,w);});
-  drawBowl(); drawNet(showBlame?1:(guessFish!==null?1:0));
+  const mlf=document.getElementById('mlf');
+  mlf.width=Math.max(320,mlf.parentElement.clientWidth-40);
+  miniCv.forEach(c=>{c.width=Math.max(140,c.parentElement.clientWidth-20);});
+  drawBowl(); drawNet(showBlame?1:(guessFish!==null?1:0)); drawMany();
 }
 window.addEventListener('resize',resizeAll);
-randWeights(); newCrop(); buildTensor(); resizeAll();
+randWeights(); newCrop(); buildTensor(); mHist=[mTotal(mW)]; resizeAll();
 </script>
 </body>
 </html>
