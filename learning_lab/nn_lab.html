@@ -199,6 +199,12 @@
       <div class="sub">Press <b>← Backprop</b> to see the blame worked out, then <b>🎛️ Apply the update</b> to
         actually nudge all 30 wires — and fire the <i>same</i> crop again to watch the loss fall.</div>
       <div class="mathbox" id="n-backmath">Fire a crop, then press <b>← Backprop</b>. ☝️</div>
+
+      <h3 style="margin-top:22px">📈 Watch one wire learn</h3>
+      <div class="sub">Keep alternating <b>← Backprop</b> → <b>🎛️ Apply</b> on the <i>same</i> crop.
+        This tracks the first wire into the true fish, step by step. Notice the changes getting
+        <b>smaller</b> as the loss falls — the weight is pacing itself.</div>
+      <div class="mathbox" id="n-hist">Fire a crop to start tracking. ☝️</div>
     </div>
     <div class="card">
       <h3>What you're seeing 👀</h3>
@@ -399,7 +405,8 @@ function newCrop(){
   document.getElementById('n-lossmath').innerHTML='Fire a crop to see the loss worked out. ☝️';
   document.getElementById('n-backmath').innerHTML='Fire a crop, then press <b>← Backprop</b>. ☝️';
   document.getElementById('n-apply').disabled=true;
-  lastBlame=null; lastGrads=null; lossBefore=null;
+  lastBlame=null; lastGrads=null; lossBefore=null; hist=[];
+  document.getElementById('n-hist').innerHTML='Fire a crop to start tracking. ☝️';
   document.getElementById('n-true').textContent=FISH[trueFish];
   document.getElementById('n-guess').textContent='—';
   document.getElementById('n-loss').textContent='—';
@@ -464,7 +471,40 @@ function showLossMath(){
        gradient of wire (i,o) = input[i] × blame[o]
    Nothing is approximated here — this is what loss.backward() computes.        */
 const N_LR=0.5;                 // deliberately large so one step is visible
-let lastBlame=null, lastGrads=null, lossBefore=null;
+let lastBlame=null, lastGrads=null, lossBefore=null, hist=[];
+
+/* history of the first wire into the true fish, one row per training step */
+function snapshotHist(){
+  hist.push({w:weights[0][trueFish], score:outputs[trueFish],
+             loss:crossEntropy(outputs,trueFish), correct:guessFish===trueFish});
+  renderHist();
+}
+function renderHist(){
+  const box=document.getElementById('n-hist');
+  if(!hist.length){box.innerHTML='Fire a crop to start tracking. ☝️';return;}
+  const sp=n=>(n>=0?'+':'')+n.toFixed(3);
+  let rows=`<span style="color:#8b98a5">step &nbsp;wire(trait 1→${FISH[trueFish]}) &nbsp;change &nbsp;&nbsp;score &nbsp;&nbsp;loss</span><br>`;
+  hist.forEach((h,k)=>{
+    const d=k===0?null:h.w-hist[k-1].w;
+    rows+=`&nbsp;&nbsp;${k} &nbsp;&nbsp;&nbsp;&nbsp;<span class="hi">${sp(h.w)}</span>`+
+          `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`+
+          `${d===null?'<span style="color:#2d3644">   —   </span>':`<span class="big">${sp(d)}</span>`}`+
+          `&nbsp;&nbsp;${h.score>=0?' ':''}${h.score.toFixed(2)}`+
+          `&nbsp;&nbsp;<span class="tot">${h.loss.toFixed(2)}</span>`+
+          `${h.correct?' ✅':''}<br>`;
+  });
+  let tail='';
+  if(hist.length>=3){
+    const d1=Math.abs(hist[1].w-hist[0].w), dn=Math.abs(hist[hist.length-1].w-hist[hist.length-2].w);
+    tail=`<br><span style="font-size:12px">First change was <b class="hi">${d1.toFixed(3)}</b>, `+
+         `latest was <b class="hi">${dn.toFixed(3)}</b> — `+
+         `${dn<d1?'the steps are shrinking as the loss falls. The weight is pacing itself, exactly like the ball on the hill. 🎢'
+                 :'still moving hard — this crop needs more steps.'}</span>`;
+  } else {
+    tail=`<br><span style="font-size:12px">Press <b>← Backprop</b> then <b>🎛️ Apply</b> again to add another row.</span>`;
+  }
+  box.innerHTML=rows+tail;
+}
 
 function computeBackprop(){
   const p=softmax(outputs);
@@ -539,10 +579,7 @@ function applyUpdate(){
   const scoreAfter=outputs[tf];
   showBlame=false; pickedFish=null; lastBlame=null; lastGrads=null;
   document.getElementById('n-apply').disabled=true;
-  document.getElementById('n-back').disabled=true;
-  document.getElementById('n-loss').textContent=after.toFixed(2);
-  document.getElementById('n-guess').textContent=FISH[guessFish];
-  drawNet(1); showMath(guessFish); showLossMath();
+  snapshotHist();
   const drop=lossBefore-after;
   document.getElementById('n-backmath').innerHTML=
     `<b class="hi">✅ 30 wires nudged. Same crop, same traits — only the desk changed.</b><br><br>`+
@@ -557,11 +594,9 @@ function applyUpdate(){
     `improvement: <span class="big">${drop>0?'−':'+'}${Math.abs(drop).toFixed(2)}</span>`+
     `${guessFish===trueFish?' &nbsp;🎉 and the guess is now CORRECT':''}<br><br>`+
     `<span style="font-size:12px">That is one full training step: forward → loss → blame → nudge. `+
-    `Press <b>▶ Fire a crop</b> again (same crop) and repeat — a few rounds and this crop is learned. `+
+    `The crop is re-fired automatically — press <b>← Backprop</b> again to take another step. `+
     `Real training does this with a fresh batch each time, thousands of times. 🔁</span>`;
-  document.getElementById('n-note').innerHTML=
-    `🎛️ Wires updated. Loss went <b>${lossBefore.toFixed(2)} → ${after.toFixed(2)}</b>. `+
-    `Fire the same crop again to keep improving it, or press <b>↺ New crop</b> for a fresh one.`;
+  fireForward();     // same crop, updated desk — re-enables Backprop for the next step
 }
 
 /* ---- show the real multiply-and-add behind one fish's score ---- */
@@ -632,6 +667,26 @@ function drawNet(prog){
     ncx.strokeStyle=`rgba(${col},${alpha})`; ncx.lineWidth=lw;
     ncx.beginPath(); ncx.moveTo(P.inX,P.inYs[i]); ncx.lineTo(P.outX,P.outYs[o]); ncx.stroke();
   }
+  // during backprop: preview old → new on each wire feeding the TRUE fish
+  if(showBlame && lastGrads){
+    ncx.font='bold 11px ui-monospace,Menlo,monospace'; ncx.textAlign='center';
+    for(let i=0;i<NIN;i++){
+      const w=weights[i][trueFish], nw=w-N_LR*lastGrads[i][trueFish];
+      const t=0.34;
+      const X=P.inX+(P.outX-P.inX)*t, Y=P.inYs[i]+(P.outYs[trueFish]-P.inYs[i])*t;
+      const a=(w>=0?'+':'')+w.toFixed(2), b=(nw>=0?'+':'')+nw.toFixed(2);
+      const label=`${a} → ${b}`;
+      const wd=ncx.measureText(label).width+10;
+      ncx.fillStyle='#0e1116'; ncx.globalAlpha=0.9;
+      ncx.fillRect(X-wd/2,Y-9,wd,18); ncx.globalAlpha=1;
+      ncx.strokeStyle='rgba(34,197,94,0.5)'; ncx.lineWidth=1;
+      ncx.strokeRect(X-wd/2,Y-9,wd,18);
+      // old in grey, arrow + new in green
+      ncx.fillStyle='#8b98a5'; ncx.textAlign='right'; ncx.fillText(a,X-wd/2+ncx.measureText(a).width+5,Y+4);
+      ncx.fillStyle='#22c55e'; ncx.textAlign='left';  ncx.fillText('→ '+b,X-wd/2+ncx.measureText(a).width+8,Y+4);
+      ncx.textAlign='center';
+    }
+  }
   // write the actual weight on each wire feeding the picked fish
   if(pickedFish!==null && !showBlame && prog>=1){
     ncx.font='bold 11px ui-monospace,Menlo,monospace'; ncx.textAlign='center';
@@ -691,13 +746,15 @@ function fireForward(){
         ? `✅ Guessed <b>${FISH[guessFish]}</b> — matches the true fish! Low loss. (An untrained net gets this right ~1 in 5 by luck.) Try backprop to see reinforcement.`
         : `❌ Guessed <b>${FISH[guessFish]}</b> but truth is <b>${FISH[trueFish]}</b>. High loss. Now hit <b>← Backprop</b> to see which wires get blamed.`;
       showMath(guessFish); showLossMath();
+      if(!hist.length) snapshotHist();   // step 0 = the untrained starting point
     }
   };
   run();
 }
 function fireBack(){
-  showBlame=true; pickedFish=null; drawNet(1);
-  computeBackprop(); showBackMath();
+  showBlame=true; pickedFish=null;
+  computeBackprop();            // must run before drawNet — it draws the old → new preview
+  drawNet(1); showBackMath();
   document.getElementById('n-apply').disabled=false;
   const correct=guessFish===trueFish;
   document.getElementById('n-note').innerHTML=(correct
