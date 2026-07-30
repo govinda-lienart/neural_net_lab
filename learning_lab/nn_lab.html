@@ -615,10 +615,15 @@ function showBackMath(){
   let rows='';
   for(let o=0;o<NOUT;o++){
     const isT=o===trueFish;
-    rows+=`${FISH[o]}: &nbsp;${(p[o]*100).toFixed(1)}% − ${isT?'1':'0'} = `+
+    const pts=Math.abs(lastBlame[o]*100).toFixed(0);
+    rows+=`${FISH[o]}: &nbsp;<span class="hi">${(p[o]*100).toFixed(1)}%</span> − `+
+          `<span class="hi">${isT?'100%':'0%'}</span> = `+
           `<span class="${isT?'tot':'hi'}">${sp(lastBlame[o])}</span>`+
-          `${isT?' &nbsp;← the truth: short by this much 🟢':' &nbsp;too enthusiastic 🟠'}<br>`;
+          `${isT?` &nbsp;🟢 should be 100% — <b class="hi">${pts} points short</b>`
+                :` &nbsp;🟠 should be 0% — ${pts} points too much`}<br>`;
   }
+  const onehot=Array.from({length:NOUT},(_,o)=>o===trueFish?'100%':'0%').join(' &nbsp; ');
+  const names=Array.from({length:NOUT},(_,o)=>FISH[o].replace('fish ','f')).join(' &nbsp;&nbsp; ');
   const pf=pickedFish!==null?pickedFish:trueFish;      // whichever fish is selected
   const isTruth=pf===trueFish;
   let g='';
@@ -639,8 +644,16 @@ function showBackMath(){
   }
   box.innerHTML=
     `<b class="hi">step 1 — blame on each of the 5 outputs</b><br>`+
-    `<span style="font-size:12px">blame = its own % minus 1 for the true fish, 0 for the rest. `+
-    `Notice the loss value (${lossBefore.toFixed(2)}) does <i>not</i> appear — it never travels back.</span><br><br>`+
+    `<span style="font-size:12px">First, what <i>should</i> the answer have been? The label says `+
+    `<b class="hi">${FISH[trueFish]}</b>, so the perfect answer is 100% on it and 0% on the rest `+
+    `(this list of targets is called <b class="hi">one-hot</b> — one position hot, the rest cold 🔥):</span><br><br>`+
+    `<span style="color:#8b98a5">target: &nbsp;${onehot}<br>`+
+    `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${names}</span><br><br>`+
+    `<span style="font-size:12px"><b class="hi">blame = what it said − what it should have said.</b> `+
+    `That's the only reason a <b class="hi">1</b> appears on the true fish: its target is 100%. `+
+    `No learning rate anywhere yet — this is pure measurement. `+
+    `And notice the loss value (${lossBefore.toFixed(2)}) does <i>not</i> appear — it never travels back.`+
+    `</span><br><br>`+
     rows+
     `<br><b class="hi">step 2 — each wire's gradient = its trait × its output's blame</b><br>`+
     `<span style="font-size:12px">Showing <b class="hi">${FISH[pf]}</b>`+
@@ -658,7 +671,15 @@ function showBackMath(){
         `(${sp(lastBlame[pf])}) and every change pushes its score <b class="hi">DOWN</b>. 🟠 `+
         `Notice its blame is smaller than the true fish's — being wrongly confident costs less than `+
         `missing the right answer.`)+
-    ` &nbsp;Press <b>🎛️ Apply the update</b> to commit it. 🎯</span>`;
+    ` &nbsp;Press <b>🎛️ Apply the update</b> to commit it. 🎯</span>`+
+    `<br><br><span style="color:#2d3644">═══════════════════════════</span><br>`+
+    `<b class="hi">the whole chain, and where the learning rate enters</b><br><br>`+
+    `blame &nbsp;&nbsp;= predicted − target &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#8b98a5">← step 1 · no learning rate</span><br>`+
+    `gradient = trait × blame &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#8b98a5">← step 2 · still none</span><br>`+
+    `change &nbsp;&nbsp;= −<span class="big">${N_LR}</span> × gradient &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#8b98a5">← step 3 · NOW it appears 🎚️</span><br><br>`+
+    `<span style="font-size:12px">Steps 1 and 2 are <b class="hi">measurement</b> — they ask "how far off were we, and `+
+    `who was involved?" Only step 3 is a <b class="hi">choice</b>: how boldly to react. That's why the history table `+
+    `keeps <code>gradient</code> and <code>change</code> in separate columns.</span>`;
 }
 
 function applyUpdate(){
