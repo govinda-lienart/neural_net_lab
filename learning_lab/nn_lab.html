@@ -155,6 +155,7 @@
       <div class="controls">
         <button class="act" id="n-forward">▶ Fire a crop (forward pass)</button>
         <button class="act ghost" id="n-back" disabled>← Backprop (assign blame)</button>
+        <button class="act ghost" id="n-apply" disabled>🎛️ Apply the update</button>
         <button class="act ghost" id="n-reset">↺ New crop</button>
         <div class="stat">true fish: <b id="n-true">—</b></div>
         <div class="stat">guess: <b id="n-guess">—</b></div>
@@ -193,13 +194,19 @@
            epochs, something is broken — frozen head, wrong learning rate, or bad labels.
            Cheapest sanity check you have on day one.</p>
       </div>
+
+      <h3 style="margin-top:22px">🔙 …and how that loss moves the wires</h3>
+      <div class="sub">Press <b>← Backprop</b> to see the blame worked out, then <b>🎛️ Apply the update</b> to
+        actually nudge all 30 wires — and fire the <i>same</i> crop again to watch the loss fall.</div>
+      <div class="mathbox" id="n-backmath">Fire a crop, then press <b>← Backprop</b>. ☝️</div>
     </div>
     <div class="card">
       <h3>What you're seeing 👀</h3>
       <div class="sub">
         • Every one of the 6 inputs connects to every one of the 5 outputs → <b>6 × 5 = 30 wires = 30 weights</b> (your real head: 384 × 5 ≈ 1,920).<br>
         • <b>Forward:</b> each output = sum of (input × wire weight). Highest wins = the guess.<br>
-        • <b>Backprop:</b> if the guess is wrong, wires leading to the answer get "blamed" — they glow by how much they'd change. That glow <b>is</b> the gradient per weight.
+        • <b>Backprop:</b> if the guess is wrong, wires leading to the answer get "blamed" — they glow by how much they'd change. That glow <b>is</b> the gradient per weight.<br>
+        • <b>Apply the update:</b> nudges all 30 wires by <code>weight − 0.5 × gradient</code>. Fire the <i>same</i> crop again and the loss will be lower — every time. That's the full loop.
       </div>
     </div>
   </div>
@@ -390,6 +397,9 @@ function newCrop(){
   document.querySelectorAll('#n-picks .pick').forEach(b=>b.classList.remove('on'));
   document.getElementById('n-math').innerHTML='Fire a crop first, then pick a fish. ☝️';
   document.getElementById('n-lossmath').innerHTML='Fire a crop to see the loss worked out. ☝️';
+  document.getElementById('n-backmath').innerHTML='Fire a crop, then press <b>← Backprop</b>. ☝️';
+  document.getElementById('n-apply').disabled=true;
+  lastBlame=null; lastGrads=null; lossBefore=null;
   document.getElementById('n-true').textContent=FISH[trueFish];
   document.getElementById('n-guess').textContent='—';
   document.getElementById('n-loss').textContent='—';
@@ -445,6 +455,90 @@ function showLossMath(){
     `<br><br>⚠️ This is <b class="hi">ONE crop's</b> loss. Real training runs a whole batch (say 16 crops) `+
     `through at once and <b class="hi">averages</b> their losses — that average is the number logged to MLflow, `+
     `and the one number all the weights share.</span>`;
+}
+
+/* ---- backprop, for real ----
+   For a single linear layer with softmax + cross-entropy, the gradient is exact
+   and tiny to write:
+       blame on output o      = probability[o] − (1 if o is the true fish else 0)
+       gradient of wire (i,o) = input[i] × blame[o]
+   Nothing is approximated here — this is what loss.backward() computes.        */
+const N_LR=0.5;                 // deliberately large so one step is visible
+let lastBlame=null, lastGrads=null, lossBefore=null;
+
+function computeBackprop(){
+  const p=softmax(outputs);
+  lastBlame=outputs.map((_,o)=>p[o]-(o===trueFish?1:0));
+  lastGrads=[];
+  for(let i=0;i<NIN;i++){
+    lastGrads.push(lastBlame.map(b=>inputs[i]*b));
+  }
+  lossBefore=crossEntropy(outputs,trueFish);
+}
+
+function showBackMath(){
+  const box=document.getElementById('n-backmath');
+  if(!lastBlame){box.innerHTML='Fire a crop, then press <b>← Backprop</b>. ☝️';return;}
+  const p=softmax(outputs), sp=n=>(n>=0?'+':'')+n.toFixed(3);
+  let rows='';
+  for(let o=0;o<NOUT;o++){
+    const isT=o===trueFish;
+    rows+=`${FISH[o]}: &nbsp;${(p[o]*100).toFixed(1)}% − ${isT?'1':'0'} = `+
+          `<span class="${isT?'tot':'hi'}">${sp(lastBlame[o])}</span>`+
+          `${isT?' &nbsp;← the truth: short by this much 🟢':' &nbsp;too enthusiastic 🟠'}<br>`;
+  }
+  let g='';
+  for(let i=0;i<NIN;i++){
+    const gr=lastGrads[i][trueFish];
+    g+=`wire (trait ${i+1} → ${FISH[trueFish]}): &nbsp;`+
+       `<span class="hi">${(inputs[i]>=0?'+':'')+inputs[i].toFixed(2)}</span> × `+
+       `<span class="tot">${sp(lastBlame[trueFish])}</span> = `+
+       `<span class="${Math.abs(gr)>0.3?'big':'hi'}">${sp(gr)}</span><br>`;
+  }
+  const i0=0, w0=weights[i0][trueFish], g0=lastGrads[i0][trueFish];
+  box.innerHTML=
+    `<b class="hi">step 1 — blame on each of the 5 outputs</b><br>`+
+    `<span style="font-size:12px">blame = its own % minus 1 for the true fish, 0 for the rest. `+
+    `Notice the loss value (${lossBefore.toFixed(2)}) does <i>not</i> appear — it never travels back.</span><br><br>`+
+    rows+
+    `<br><b class="hi">step 2 — each wire's gradient = its trait × its output's blame</b><br>`+
+    `<span style="font-size:12px">Shown for the 6 wires feeding ${FISH[trueFish]} (the green ones). `+
+    `The same happens for all 30.</span><br><br>`+
+    g+
+    `<br><b class="hi">step 3 — the update (learning rate ${N_LR})</b><br><br>`+
+    `wire (trait 1 → ${FISH[trueFish]}): &nbsp;`+
+    `<span class="hi">${sp(w0)}</span> − ${N_LR} × <span class="hi">${sp(g0)}</span> = `+
+    `<span class="big">${sp(w0-N_LR*g0)}</span><br><br>`+
+    `<span style="font-size:12px">A <b class="hi">negative</b> gradient means subtracting it makes the wire `+
+    `<b class="hi">bigger</b> → ${FISH[trueFish]}'s score goes up next time. `+
+    `Press <b>🎛️ Apply the update</b>, then fire the same crop again. 🎯</span>`;
+}
+
+function applyUpdate(){
+  if(!lastGrads) return;
+  for(let i=0;i<NIN;i++)for(let o=0;o<NOUT;o++) weights[i][o]-=N_LR*lastGrads[i][o];
+  computeOutputs();
+  const after=crossEntropy(outputs,trueFish);
+  showBlame=false; pickedFish=null; lastBlame=null; lastGrads=null;
+  document.getElementById('n-apply').disabled=true;
+  document.getElementById('n-back').disabled=true;
+  document.getElementById('n-loss').textContent=after.toFixed(2);
+  document.getElementById('n-guess').textContent=FISH[guessFish];
+  drawNet(1); showMath(guessFish); showLossMath();
+  const drop=lossBefore-after;
+  document.getElementById('n-backmath').innerHTML=
+    `<b class="hi">✅ 30 wires nudged. Same crop, same traits — only the desk changed.</b><br><br>`+
+    `loss before: <span class="hi">${lossBefore.toFixed(2)}</span><br>`+
+    `loss after: &nbsp;<span class="tot">${after.toFixed(2)}</span><br>`+
+    `<span style="color:#2d3644">──────────────────</span><br>`+
+    `improvement: <span class="big">${drop>0?'−':'+'}${Math.abs(drop).toFixed(2)}</span>`+
+    `${guessFish===trueFish?' &nbsp;🎉 and the guess is now CORRECT':''}<br><br>`+
+    `<span style="font-size:12px">That is one full training step: forward → loss → blame → nudge. `+
+    `Press <b>▶ Fire a crop</b> again (same crop) and repeat — a few rounds and this crop is learned. `+
+    `Real training does this with a fresh batch each time, thousands of times. 🔁</span>`;
+  document.getElementById('n-note').innerHTML=
+    `🎛️ Wires updated. Loss went <b>${lossBefore.toFixed(2)} → ${after.toFixed(2)}</b>. `+
+    `Fire the same crop again to keep improving it, or press <b>↺ New crop</b> for a fresh one.`;
 }
 
 /* ---- show the real multiply-and-add behind one fish's score ---- */
@@ -579,14 +673,18 @@ function fireForward(){
   run();
 }
 function fireBack(){
-  showBlame=true; drawNet(1);
+  showBlame=true; pickedFish=null; drawNet(1);
+  computeBackprop(); showBackMath();
+  document.getElementById('n-apply').disabled=false;
   const correct=guessFish===trueFish;
-  document.getElementById('n-note').innerHTML=correct
+  document.getElementById('n-note').innerHTML=(correct
     ? '🟢 Green wires (into the correct fish) are <b>reinforced</b> — nudged to make this answer even stronger next time.'
-    : '🟢 Green wires (into the <b>true</b> fish) get pushed UP · 🟠 orange wires (into the <b>wrong</b> guess) get pushed DOWN. Each wire\'s glow = its gradient. That\'s one learning step.';
+    : '🟢 Green wires (into the <b>true</b> fish) get pushed UP · 🟠 orange wires (into the <b>wrong</b> guess) get pushed DOWN. Each wire\'s glow = its gradient.')
+    +' Scroll down to <b>🔙 how that loss moves the wires</b> for the actual numbers, then <b>🎛️ Apply the update</b>.';
 }
 document.getElementById('n-forward').onclick=fireForward;
 document.getElementById('n-back').onclick=fireBack;
+document.getElementById('n-apply').onclick=applyUpdate;
 document.getElementById('n-reset').onclick=newCrop;
 
 /* ================= VIEW 3: TENSOR ANATOMY ================= */
