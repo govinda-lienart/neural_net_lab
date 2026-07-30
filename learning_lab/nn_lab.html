@@ -202,8 +202,11 @@
 
       <h3 style="margin-top:22px">📈 Watch one wire learn</h3>
       <div class="sub">Keep alternating <b>← Backprop</b> → <b>🎛️ Apply</b> on the <i>same</i> crop.
-        This tracks the first wire into the true fish, step by step. Notice the changes getting
-        <b>smaller</b> as the loss falls — the weight is pacing itself.</div>
+        This tracks the first wire into the true fish, step by step. Notice the <b>gradient</b> shrinking
+        toward zero as the loss falls — the weight is pacing itself.
+        <br><b>wire</b> = the fader's position (what gets saved) &nbsp;·&nbsp;
+        <b>gradient</b> = the tilt it felt &nbsp;·&nbsp;
+        <b>change</b> = <code>−learning_rate × gradient</code>, how far it actually moved.</div>
       <div class="mathbox" id="n-hist">Fire a crop to start tracking. ☝️</div>
     </div>
     <div class="card">
@@ -483,12 +486,15 @@ function renderHist(){
   const box=document.getElementById('n-hist');
   if(!hist.length){box.innerHTML='Fire a crop to start tracking. ☝️';return;}
   const sp=n=>(n>=0?'+':'')+n.toFixed(3);
-  let rows=`<span style="color:#8b98a5">step &nbsp;wire(trait 1→${FISH[trueFish]}) &nbsp;change &nbsp;&nbsp;score &nbsp;&nbsp;loss</span><br>`;
+  let rows=`<span style="color:#8b98a5">step &nbsp;wire(trait 1→${FISH[trueFish]}) `+
+           `&nbsp;gradient &nbsp;change &nbsp;&nbsp;score &nbsp;&nbsp;loss</span><br>`;
   hist.forEach((h,k)=>{
     const d=k===0?null:h.w-hist[k-1].w;
+    const g=d===null?null:-d/N_LR;          // change = −lr × gradient
     rows+=`&nbsp;&nbsp;${k} &nbsp;&nbsp;&nbsp;&nbsp;<span class="hi">${sp(h.w)}</span>`+
           `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`+
-          `${d===null?'<span style="color:#2d3644">   —   </span>':`<span class="big">${sp(d)}</span>`}`+
+          `${g===null?'<span style="color:#2d3644">   —   </span>':`<span class="big">${sp(g)}</span>`}`+
+          `&nbsp;&nbsp;${d===null?'<span style="color:#2d3644">   —   </span>':`<span class="hi">${sp(d)}</span>`}`+
           `&nbsp;&nbsp;${h.score>=0?' ':''}${h.score.toFixed(2)}`+
           `&nbsp;&nbsp;<span class="tot">${h.loss.toFixed(2)}</span>`+
           `${h.correct?' ✅':''}<br>`;
