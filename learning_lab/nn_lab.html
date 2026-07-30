@@ -345,6 +345,7 @@
         <button class="act" id="f-fwd">▶ Forward pass</button>
         <button class="act ghost" id="f-back" disabled>← Backward pass</button>
         <button class="act ghost" id="f-discard" disabled>🗑️ Free the memory</button>
+        <button class="act ghost" id="f-newcrop">🐟 New crop</button>
         <button class="act ghost" id="f-reset">↺ Reset</button>
         <button class="pick" id="f-batch">batch: 1 crop</button>
       </div>
@@ -366,10 +367,13 @@
         <div class="rung"><b>fingerprint</b> · the 384 that survive the trip 💾</div>
       </div>
       <div class="note" style="margin-top:14px">
-        <b>Why the backward pass stops.</b> Gradients are only needed for weights you intend to move.
-        The backbone is <code>requires_grad = False</code>, so there is nothing to measure there — the blame
-        reaches the head's wires, uses the fingerprint values to compute their gradients, and halts.
-        That wall is the entire reason fine-tuning takes minutes instead of days. ⏱️
+        <b>Why the backward pass stops — the subtle bit.</b> It is <i>not</i> that DINOv2's output is ignored.
+        Every head gradient is <code>fingerprint × blame</code>, so those 384 values are essential and get read.
+        What doesn't happen is computing a gradient <i>for</i> them: continuing backwards needs
+        <code>Wᵀ · blame</code>, and PyTorch skips it because no weight behind the wall has
+        <code>requires_grad = True</code>. <b>Reading a value and measuring blame for it are different
+        operations</b> — the chain is built only as far back as something intends to move. That's the entire
+        reason fine-tuning takes minutes instead of days. ⏱️
       </div>
     </div>
 
@@ -1143,7 +1147,13 @@ const STAGES=[
   {label:'fingerprint', x:0.66, n:8, kind:'fp',  sub:'384 numbers'},
   {label:'5 scores',    x:0.90, n:5, kind:'out', sub:'your head'},
 ];
-let fProg=0, fBack=0, fPhase='idle', fBatch=1, fRAF=null, fDiscard=0;
+let fProg=0, fBack=0, fPhase='idle', fBatch=1, fRAF=null, fDiscard=0, fVals=[], fCropN=1;
+
+/* every neuron holds a real value; a new crop regenerates all of them */
+function newFlowCrop(){
+  fVals=STAGES.map(st=>Array.from({length:st.n},()=>(Math.random()*2-1)*1.6));
+  fCropN++;
+}
 
 function fStageXY(s,W,H){
   const st=STAGES[s], padY=70, X=st.x*W;
@@ -1213,6 +1223,13 @@ function drawFlow(){
         fx.strokeStyle=`rgba(${col},${0.5*on})`; fx.lineWidth=1;
         fx.beginPath(); fx.arc(X,y,st.kind==='fp'?8:9,0,7); fx.stroke();
       }
+      // the neuron's actual value — appears as it lights up, fades when freed
+      if(on>0.25 && fVals[s]){
+        const v=fVals[s][i];
+        fx.fillStyle=`rgba(230,237,243,${0.35+0.6*on})`;
+        fx.font='9px ui-monospace,Menlo,monospace'; fx.textAlign='center';
+        fx.fillText((v>=0?'+':'')+v.toFixed(2),X,y-14);
+      }
     });
     fx.fillStyle= on>0.2?'#e6edf3':'#8b98a5';
     fx.font='bold 11px sans-serif'; fx.textAlign='center';
@@ -1230,8 +1247,16 @@ function drawFlow(){
     fx.beginPath(); fx.moveTo(tipX,H*0.5); fx.lineTo(tipX+11,H*0.5-6); fx.lineTo(tipX+11,H*0.5+6);
     fx.closePath(); fx.fillStyle='#22c55e'; fx.fill();
     if(fBack>0.62){
-      fx.fillStyle='#ef4444'; fx.font='bold 13px sans-serif'; fx.textAlign='center';
-      fx.fillText('⛔ STOP',wallX,H*0.5-18);
+      // the honest version: the fingerprint's VALUES are used, it just gets no gradient
+      const fpX=STAGES[5].x*W;
+      fx.textAlign='center'; fx.font='bold 11px sans-serif';
+      fx.fillStyle='#22c55e'; fx.fillText('✅ values USED',fpX,H*0.5-34);
+      fx.fillStyle='#8b98a5'; fx.font='10px sans-serif';
+      fx.fillText('gradient = fingerprint × blame',fpX,H*0.5-22);
+      fx.fillStyle='#ef4444'; fx.font='bold 12px sans-serif';
+      fx.fillText('⛔ no gradient computed',wallX+4,H*0.5-34);
+      fx.fillStyle='#8b98a5'; fx.font='10px sans-serif';
+      fx.fillText('nothing behind here will move',wallX+4,H*0.5-22);
     }
   }
   updateFlowStats();
@@ -1272,10 +1297,16 @@ document.getElementById('f-back').onclick=()=>{
   fAnimate('back',1800,()=>{
     document.getElementById('f-discard').disabled=false;
     document.getElementById('f-note').innerHTML=
-      `⛔ Blame reached the head's wires, computed their <b>${HEAD_W.toLocaleString()}</b> gradients — `+
-      `and <b>stopped at the wall</b>. It never entered the backbone, because those `+
-      `${BB_W.toLocaleString()} weights are <code>requires_grad = False</code>: there is nothing to move, `+
-      `so there is nothing to measure. <b>That's the whole saving of transfer learning.</b> ⏱️`;
+      `⛔ Blame reached the head's wires and computed their <b>${HEAD_W.toLocaleString()}</b> gradients — `+
+      `then stopped. <b>Read the wall carefully, it's subtle:</b><br><br>`+
+      `• The fingerprint's <b>values are used</b> — every head gradient is `+
+      `<code>fingerprint × blame</code>, so DINOv2's output is essential. ✅<br>`+
+      `• But <b>no gradient is computed for the fingerprint itself</b>. To carry on backwards you'd need `+
+      `<code>Wᵀ · blame</code>, and PyTorch skips it because nothing behind the wall has `+
+      `<code>requires_grad = True</code>. ⛔<br><br>`+
+      `Those are different things: <b>reading a value</b> vs <b>measuring blame for it</b>. The chain is only `+
+      `built as far back as something intends to move. Unfreeze the backbone and it flows all the way — `+
+      `and gets far slower. ⏱️`;
   });
 };
 document.getElementById('f-discard').onclick=()=>{
@@ -1301,6 +1332,17 @@ document.getElementById('f-batch').onclick=()=>{
       `That's why "out of memory" is fixed by lowering the batch size.`
     : `Back to a single crop.`;
 };
+document.getElementById('f-newcrop').onclick=()=>{
+  cancelAnimationFrame(fRAF);
+  newFlowCrop(); fProg=0; fBack=0; fDiscard=0; fPhase='idle';
+  document.getElementById('f-back').disabled=true;
+  document.getElementById('f-discard').disabled=true;
+  drawFlow();
+  document.getElementById('f-note').innerHTML=
+    `🐟 Crop #${fCropN} loaded. Press <b>▶ Forward pass</b> and watch: <b>every neuron value is different</b> `+
+    `— because the values come from the picture. The <b>wires never changed</b>. `+
+    `Neurons are what's happening now; weights are what the model knows.`;
+};
 document.getElementById('f-reset').onclick=()=>{
   cancelAnimationFrame(fRAF);
   fProg=0; fBack=0; fDiscard=0; fPhase='idle';
@@ -1325,7 +1367,7 @@ function resizeAll(){
   drawBowl(); drawNet(showBlame?1:(guessFish!==null?1:0)); drawMany();
 }
 window.addEventListener('resize',resizeAll);
-randWeights(); newCrop(); buildTensor(); mHist=[mTotal(mW)]; resizeAll();
+randWeights(); newCrop(); buildTensor(); newFlowCrop(); mHist=[mTotal(mW)]; resizeAll();
 </script>
 </body>
 </html>
