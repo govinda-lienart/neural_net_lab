@@ -104,6 +104,7 @@
   <div class="tab" data-view="net">② The Network</div>
   <div class="tab" data-view="tensor">③ Tensor Anatomy</div>
   <div class="tab" data-view="many">④ One Loss, Many Weights</div>
+  <div class="tab" data-view="flow">⑤ The Whole Flow</div>
 </div>
 
 <div class="wrap">
@@ -320,7 +321,7 @@
         the gradients, which never appear on this chart at all.</div>
     </div>
 
-    <div class="card">
+    <div class="card" id="many-try">
       <h3>Try this 🧪</h3>
       <div class="sub">
         1. <b>Step once</b> and compare the six <b>tilt</b> numbers — all different, all from the same loss.<br>
@@ -328,6 +329,59 @@
         3. Press <b>Play</b> — every ball lands in its own valley at its own pace, and the cyan line sinks to the floor.<br>
         4. Reset, set the rate to <b>0.45+</b> and play: <b>w₃ starts bouncing</b> while the gentle ones stay calm.
         One learning rate is shared by all weights — that's why a rate that suits one can wreck another. 💥
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ VIEW 5: THE WHOLE FLOW ============ -->
+  <div class="view" id="flow">
+    <div class="card">
+      <h3>One crop through the whole system — and what survives</h3>
+      <div class="sub">The full pipeline, simplified: a crop enters, flows through the <b>frozen backbone</b>,
+        becomes a <b>fingerprint</b>, and gets scored by <b>your head</b>. Then watch the blame come back —
+        and stop dead at the frozen wall.</div>
+      <canvas id="flowcanvas" height="440"></canvas>
+      <div class="controls">
+        <button class="act" id="f-fwd">▶ Forward pass</button>
+        <button class="act ghost" id="f-back" disabled>← Backward pass</button>
+        <button class="act ghost" id="f-discard" disabled>🗑️ Free the memory</button>
+        <button class="act ghost" id="f-reset">↺ Reset</button>
+        <button class="pick" id="f-batch">batch: 1 crop</button>
+      </div>
+      <div class="controls" style="margin-top:4px">
+        <div class="stat">neurons computed: <b id="f-computed">0</b></div>
+        <div class="stat">neurons kept: <b id="f-kept">0</b></div>
+        <div class="stat">weights updated: <b id="f-updated">0</b></div>
+        <div class="stat">weights frozen: <b id="f-frozen">21,000,000</b></div>
+      </div>
+      <div class="note" id="f-note">Press <b>▶ Forward pass</b>. Watch the values light up left to right —
+        every neuron recomputed from scratch for this crop.</div>
+    </div>
+
+    <div class="card">
+      <h3>The three things that behave differently 🧩</h3>
+      <div class="ladder">
+        <div class="rung"><b>weights</b> · the wires — fixed while frozen, saved to <code>brain.pt</code> 🧊</div>
+        <div class="rung"><b>neurons</b> · the values — recomputed every crop, then thrown away 🔄</div>
+        <div class="rung"><b>fingerprint</b> · the 384 that survive the trip 💾</div>
+      </div>
+      <div class="note" style="margin-top:14px">
+        <b>Why the backward pass stops.</b> Gradients are only needed for weights you intend to move.
+        The backbone is <code>requires_grad = False</code>, so there is nothing to measure there — the blame
+        reaches the head's wires, uses the fingerprint values to compute their gradients, and halts.
+        That wall is the entire reason fine-tuning takes minutes instead of days. ⏱️
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Try this 🧪</h3>
+      <div class="sub">
+        1. <b>Forward</b> → <b>Backward</b> → <b>Free the memory</b>, and watch the counters. Six million computed,
+        384 kept, 1,920 moved.<br>
+        2. Switch <b>batch</b> to 16 and forward again — the lanes stack up. Sixteen crops go through each layer
+        <i>together</i>, not one after another. Notice "computed" multiplies by 16: that's your memory bill. 💾<br>
+        3. Look at where the backward arrow stops. Everything left of that wall never learns anything — and never
+        needs to. 🧊
       </div>
     </div>
   </div>
@@ -1077,6 +1131,186 @@ document.getElementById('m-play').onclick=mPlay;
 document.getElementById('m-step').onclick=()=>{mStop();mStepOnce();};
 document.getElementById('m-reset').onclick=mReset;
 
+/* ================= VIEW 5: THE WHOLE FLOW ================= */
+const fc=document.getElementById('flowcanvas'), fx=fc.getContext('2d');
+const ACT_PER_CROP=5921280, FP=384, HEAD_W=1920, BB_W=21000000;
+const STAGES=[
+  {label:'crop',        x:0.06, n:6, kind:'crop', sub:'(3,224,224)'},
+  {label:'block 1',     x:0.19, n:6, frozen:true},
+  {label:'block 2',     x:0.30, n:6, frozen:true},
+  {label:'block 3',     x:0.41, n:6, frozen:true},
+  {label:'block 4',     x:0.52, n:6, frozen:true},
+  {label:'fingerprint', x:0.66, n:8, kind:'fp',  sub:'384 numbers'},
+  {label:'5 scores',    x:0.90, n:5, kind:'out', sub:'your head'},
+];
+let fProg=0, fBack=0, fPhase='idle', fBatch=1, fRAF=null, fDiscard=0;
+
+function fStageXY(s,W,H){
+  const st=STAGES[s], padY=70, X=st.x*W;
+  const ys=[];
+  for(let i=0;i<st.n;i++) ys.push(padY+(H-padY-60)*(st.n===1?0.5:i/(st.n-1)));
+  return {X,ys};
+}
+function drawFlow(){
+  const W=fc.width,H=fc.height; fx.clearRect(0,0,W,H);
+  const lit=s=>Math.max(0,Math.min(1,fProg*(STAGES.length)-s));
+  // frozen backbone region
+  const x1=STAGES[1].x*W-26, x2=STAGES[5].x*W+30;
+  fx.fillStyle='rgba(56,189,248,0.05)'; fx.fillRect(x1,44,x2-x1,H-84);
+  fx.strokeStyle='rgba(56,189,248,0.25)'; fx.setLineDash([5,4]); fx.lineWidth=1;
+  fx.strokeRect(x1,44,x2-x1,H-84); fx.setLineDash([]);
+  fx.fillStyle='#38bdf8'; fx.font='bold 12px sans-serif'; fx.textAlign='left';
+  fx.fillText('🧊 FROZEN BACKBONE (DINOv2) — computes, never learns',x1+8,36);
+  // the wall
+  const wallX=(STAGES[5].x*W+STAGES[6].x*W)/2;
+  fx.strokeStyle='#ef4444'; fx.lineWidth=2; fx.setLineDash([8,6]);
+  fx.beginPath(); fx.moveTo(wallX,44); fx.lineTo(wallX,H-40); fx.stroke(); fx.setLineDash([]);
+  fx.fillStyle='#ef4444'; fx.font='bold 11px sans-serif'; fx.textAlign='center';
+  fx.fillText('gradients stop here',wallX,H-24);
+  fx.fillStyle='#22c55e'; fx.textAlign='left';
+  fx.fillText('🔥 YOUR HEAD — learns',wallX+10,36);
+
+  // batch ghosts
+  const lanes=fBatch>1?3:0;
+  for(let g=lanes;g>=1;g--){
+    fx.globalAlpha=0.10;
+    for(let s=0;s<STAGES.length;s++){
+      const {X,ys}=fStageXY(s,W,H), off=g*7;
+      fx.fillStyle='#8b98a5';
+      ys.forEach(y=>{fx.beginPath();fx.arc(X+off,y-off,9,0,7);fx.fill();});
+    }
+    fx.globalAlpha=1;
+  }
+
+  // wires between consecutive stages
+  for(let s=0;s<STAGES.length-1;s++){
+    const a=fStageXY(s,W,H), b=fStageXY(s+1,W,H);
+    const on=Math.min(lit(s),lit(s+1));
+    const isHead=s===5;
+    // backward highlight: outputs -> head wires -> stops at fingerprint
+    let bw=0;
+    if(fPhase==='backward'&&isHead) bw=Math.max(0,Math.min(1,(fBack-0.15)*2.2));
+    a.ys.forEach(ya=>b.ys.forEach(yb=>{
+      fx.strokeStyle=bw>0?`rgba(34,197,94,${0.25+0.5*bw})`
+                         :`rgba(139,152,165,${0.06+0.16*on})`;
+      fx.lineWidth=bw>0?1.6:0.7;
+      fx.beginPath(); fx.moveTo(a.X+10,ya); fx.lineTo(b.X-10,yb); fx.stroke();
+    }));
+  }
+
+  // stages
+  for(let s=0;s<STAGES.length;s++){
+    const st=STAGES[s], {X,ys}=fStageXY(s,W,H);
+    let on=lit(s);
+    if(fDiscard>0 && st.frozen) on*=(1-fDiscard);          // backbone activations freed
+    if(fDiscard>0 && st.kind==='crop') on*=(1-fDiscard);
+    ys.forEach((y,i)=>{
+      const seed=Math.sin(s*13.7+i*4.1)*0.5+0.5;
+      let col= st.kind==='fp' ? '56,189,248' : st.kind==='out' ? '34,197,94' : '59,130,246';
+      fx.fillStyle=`rgba(${col},${0.12+0.75*on*(0.5+0.5*seed)})`;
+      fx.beginPath(); fx.arc(X,y,st.kind==='fp'?8:9,0,7); fx.fill();
+      if(on>0.15){
+        fx.strokeStyle=`rgba(${col},${0.5*on})`; fx.lineWidth=1;
+        fx.beginPath(); fx.arc(X,y,st.kind==='fp'?8:9,0,7); fx.stroke();
+      }
+    });
+    fx.fillStyle= on>0.2?'#e6edf3':'#8b98a5';
+    fx.font='bold 11px sans-serif'; fx.textAlign='center';
+    fx.fillText(st.label,X,H-52);
+    if(st.sub){fx.fillStyle='#8b98a5';fx.font='10px sans-serif';fx.fillText(st.sub,X,H-40);}
+    if(st.frozen&&on>0.2){fx.font='11px sans-serif';fx.fillText('🧊',X,60);}
+  }
+
+  // backward arrow, halting at the wall
+  if(fPhase==='backward'){
+    const from=STAGES[6].x*W, to=STAGES[5].x*W+18;
+    const tipX=from-(from-to)*Math.min(1,fBack*1.6);
+    fx.strokeStyle='#22c55e'; fx.lineWidth=3;
+    fx.beginPath(); fx.moveTo(from,H*0.5-  (0)); fx.lineTo(tipX,H*0.5); fx.stroke();
+    fx.beginPath(); fx.moveTo(tipX,H*0.5); fx.lineTo(tipX+11,H*0.5-6); fx.lineTo(tipX+11,H*0.5+6);
+    fx.closePath(); fx.fillStyle='#22c55e'; fx.fill();
+    if(fBack>0.62){
+      fx.fillStyle='#ef4444'; fx.font='bold 13px sans-serif'; fx.textAlign='center';
+      fx.fillText('⛔ STOP',wallX,H*0.5-18);
+    }
+  }
+  updateFlowStats();
+}
+function updateFlowStats(){
+  const done=Math.min(1,fProg);
+  const computed=Math.round(ACT_PER_CROP*fBatch*done*(1-fDiscard));
+  document.getElementById('f-computed').textContent=computed.toLocaleString();
+  document.getElementById('f-kept').textContent=(done>=1?FP*fBatch:0).toLocaleString();
+  document.getElementById('f-updated').textContent=
+    (fPhase==='backward'&&fBack>=1)||fPhase==='done'?HEAD_W.toLocaleString():'0';
+  document.getElementById('f-frozen').textContent=BB_W.toLocaleString();
+}
+function fAnimate(key,dur,onEnd){
+  cancelAnimationFrame(fRAF); const t0=performance.now();
+  const run=t=>{
+    const p=Math.min(1,(t-t0)/dur);
+    if(key==='fwd')fProg=p; else if(key==='back')fBack=p; else fDiscard=p;
+    drawFlow();
+    if(p<1) fRAF=requestAnimationFrame(run); else if(onEnd) onEnd();
+  };
+  fRAF=requestAnimationFrame(run);
+}
+document.getElementById('f-fwd').onclick=()=>{
+  fPhase='forward'; fBack=0; fDiscard=0;
+  document.getElementById('f-back').disabled=true;
+  document.getElementById('f-discard').disabled=true;
+  fAnimate('fwd',2200,()=>{
+    document.getElementById('f-back').disabled=false;
+    document.getElementById('f-note').innerHTML=
+      `✅ Forward done. <b>${(ACT_PER_CROP*fBatch).toLocaleString()}</b> neuron values were computed `+
+      `and are all still <b>held in memory</b> — the backward pass needs them. `+
+      `Only <b>${FP*fBatch}</b> of them (the fingerprint) are worth keeping. Now press <b>← Backward pass</b>.`;
+  });
+};
+document.getElementById('f-back').onclick=()=>{
+  fPhase='backward';
+  fAnimate('back',1800,()=>{
+    document.getElementById('f-discard').disabled=false;
+    document.getElementById('f-note').innerHTML=
+      `⛔ Blame reached the head's wires, computed their <b>${HEAD_W.toLocaleString()}</b> gradients — `+
+      `and <b>stopped at the wall</b>. It never entered the backbone, because those `+
+      `${BB_W.toLocaleString()} weights are <code>requires_grad = False</code>: there is nothing to move, `+
+      `so there is nothing to measure. <b>That's the whole saving of transfer learning.</b> ⏱️`;
+  });
+};
+document.getElementById('f-discard').onclick=()=>{
+  fPhase='done';
+  fAnimate('disc',1400,()=>{
+    document.getElementById('f-note').innerHTML=
+      `🗑️ Backbone activations freed — that memory is gone. What survives: the <b>${FP*fBatch}</b> fingerprint `+
+      `numbers, and the <b>${HEAD_W.toLocaleString()}</b> head weights that just moved. `+
+      `Next crop starts from scratch. <br><br><b>And since the backbone is frozen, the same crop would produce `+
+      `the identical fingerprint next epoch</b> — which is why <code>embed_crops.py</code> can compute them `+
+      `once and never run DINOv2 again. 🐟`;
+  });
+};
+document.getElementById('f-batch').onclick=()=>{
+  fBatch=fBatch===1?16:1;
+  document.getElementById('f-batch').textContent=`batch: ${fBatch} crop${fBatch>1?'s':''}`;
+  document.getElementById('f-batch').classList.toggle('on',fBatch>1);
+  drawFlow();
+  document.getElementById('f-note').innerHTML=fBatch>1
+    ? `📦 Batch of 16. All 16 crops go through each layer <b>at the same time</b> — sixteen lanes wide, not `+
+      `sixteen trips. Layers stay sequential, crops are parallel. Memory multiplies by 16 `+
+      `(<b>${(ACT_PER_CROP*16).toLocaleString()}</b> activations held at once); wall-clock time barely does. `+
+      `That's why "out of memory" is fixed by lowering the batch size.`
+    : `Back to a single crop.`;
+};
+document.getElementById('f-reset').onclick=()=>{
+  cancelAnimationFrame(fRAF);
+  fProg=0; fBack=0; fDiscard=0; fPhase='idle';
+  document.getElementById('f-back').disabled=true;
+  document.getElementById('f-discard').disabled=true;
+  document.getElementById('f-note').innerHTML='Press <b>▶ Forward pass</b>. Watch the values light up left to '+
+    'right — every neuron recomputed from scratch for this crop.';
+  drawFlow();
+};
+
 /* ---------- responsive ---------- */
 function resizeAll(){
   [bowl,nc].forEach(c=>{const w=c.parentElement.clientWidth-40;c.width=Math.max(320,w);});
@@ -1085,6 +1319,8 @@ function resizeAll(){
   const hc=document.getElementById('n-hill');
   hc.width=Math.max(320,hc.parentElement.clientWidth-40);
   if(hist.length) drawHill();
+  fc.width=Math.max(360,fc.parentElement.clientWidth-40);
+  drawFlow();
   miniCv.forEach(c=>{c.width=Math.max(140,c.parentElement.clientWidth-20);});
   drawBowl(); drawNet(showBlame?1:(guessFish!==null?1:0)); drawMany();
 }
