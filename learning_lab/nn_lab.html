@@ -286,6 +286,11 @@
       <canvas id="mlf" height="220"></canvas>
       <div class="note">The chart's horizontal axis is <b>time (steps)</b> — not a weight value. That's the difference
         between this chart and the six hills above: same vertical axis (loss), completely different horizontal one.</div>
+      <div class="note" style="border-left-color:var(--orange)">
+        <b>What one dot really is.</b> This toy has no crops, so each dot is just the loss after one nudge.
+        In real training, one step = <b>one batch</b> of crops (say 16) forward and back, and the dot is the
+        <b>average of those 16 losses</b>. So a dot is a batch average, not a single crop — and not a summary of
+        the gradients, which never appear on this chart at all.</div>
     </div>
 
     <div class="card">
@@ -436,7 +441,10 @@ function showLossMath(){
     `the model gave ${FISH[trueFish]} only <span class="tot">${(p[trueFish]*100).toFixed(1)}%</span><br>`+
     `loss = −ln(${p[trueFish].toFixed(4)}) = <span class="big">${L.toFixed(2)}</span>`+
     `<br><br><span style="font-size:12px">100% on the true fish → loss 0. `+
-    `50% → 0.69. &nbsp;10% → 2.30. &nbsp;1% → 4.61. The less it believed the truth, the higher the loss.</span>`;
+    `50% → 0.69. &nbsp;10% → 2.30. &nbsp;1% → 4.61. The less it believed the truth, the higher the loss.`+
+    `<br><br>⚠️ This is <b class="hi">ONE crop's</b> loss. Real training runs a whole batch (say 16 crops) `+
+    `through at once and <b class="hi">averages</b> their losses — that average is the number logged to MLflow, `+
+    `and the one number all the weights share.</span>`;
 }
 
 /* ---- show the real multiply-and-add behind one fish's score ---- */
