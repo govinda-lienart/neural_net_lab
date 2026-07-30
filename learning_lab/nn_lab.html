@@ -357,6 +357,15 @@
       </div>
       <div class="note" id="f-note">Press <b>▶ Forward pass</b>. Watch the values light up left to right —
         every neuron recomputed from scratch for this crop.</div>
+      <div class="note" style="border-left-color:var(--orange)">
+        <b>⚠️ Dot counts are for legibility — read the numbers under each label instead.</b>
+        A transformer does <i>not</i> taper layer by layer: every block is the same width
+        (<b>257 tokens × 384 = 98,688</b> neurons), rewriting the values rather than reducing them.
+        The drop to <b>384</b> happens once, at the end, by keeping only the <b>CLS token</b> — one token out
+        of 257, with the other 256 discarded. Flat, flat, flat, then a cliff. 🧗
+        <br><br>Overall the system is a funnel: <b>150,528 → 384 → 5</b>. Learning a representation means
+        throwing almost everything away and keeping only what tells one fish from another.
+      </div>
     </div>
 
     <div class="card">
@@ -1138,14 +1147,17 @@ document.getElementById('m-reset').onclick=mReset;
 /* ================= VIEW 5: THE WHOLE FLOW ================= */
 const fc=document.getElementById('flowcanvas'), fx=fc.getContext('2d');
 const ACT_PER_CROP=5921280, FP=384, HEAD_W=1920, BB_W=21000000;
+/* dot counts are for legibility only — `sub` carries the REAL neuron counts.
+   A ViT holds constant width: every block is 257 tokens x 384 = 98,688.
+   The drop to 384 happens once, by keeping only the CLS token.            */
 const STAGES=[
-  {label:'crop',        x:0.06, n:6, kind:'crop', sub:'(3,224,224)'},
-  {label:'block 1',     x:0.19, n:6, frozen:true},
-  {label:'block 2',     x:0.30, n:6, frozen:true},
-  {label:'block 3',     x:0.41, n:6, frozen:true},
-  {label:'block 4',     x:0.52, n:6, frozen:true},
-  {label:'fingerprint', x:0.66, n:8, kind:'fp',  sub:'384 numbers'},
-  {label:'5 scores',    x:0.90, n:5, kind:'out', sub:'your head'},
+  {label:'crop',        x:0.06, n:6, kind:'crop', sub:'150,528'},
+  {label:'block 1',     x:0.19, n:6, frozen:true, sub:'98,688'},
+  {label:'block 2',     x:0.30, n:6, frozen:true, sub:'98,688'},
+  {label:'block 3',     x:0.41, n:6, frozen:true, sub:'98,688'},
+  {label:'block 4',     x:0.52, n:6, frozen:true, sub:'98,688'},
+  {label:'fingerprint', x:0.66, n:8, kind:'fp',  sub:'384 ⬅ the cliff'},
+  {label:'5 scores',    x:0.90, n:5, kind:'out', sub:'5'},
 ];
 let fProg=0, fBack=0, fPhase='idle', fBatch=1, fRAF=null, fDiscard=0, fVals=[], fCropN=1;
 
