@@ -208,6 +208,17 @@
         <b>gradient</b> = the tilt it felt &nbsp;·&nbsp;
         <b>change</b> = <code>−learning_rate × gradient</code>, how far it actually moved.</div>
       <div class="mathbox" id="n-hist">Fire a crop to start tracking. ☝️</div>
+
+      <canvas id="n-hill" height="240" style="margin-top:14px"></canvas>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--blue)"></span>this wire's real hill (loss for this crop)</span>
+        <span><span class="dot" style="background:var(--orange)"></span>where the wire is now</span>
+        <span><span class="dot" style="background:var(--green)"></span>the valley — best value for this wire</span>
+        <span><span class="dot" style="background:#8b98a5"></span>where it has been</span>
+      </div>
+      <div class="note" id="n-hillnote">Fire a crop, then step with <b>← Backprop</b> → <b>🎛️ Apply</b> and
+        watch the ball walk down its own hill. This is the same picture as tab ① — except now it's a real
+        weight in a real network, on a hill computed from your actual crop.</div>
     </div>
     <div class="card">
       <h3>What you're seeing 👀</h3>
@@ -510,6 +521,81 @@ function renderHist(){
     tail=`<br><span style="font-size:12px">Press <b>← Backprop</b> then <b>🎛️ Apply</b> again to add another row.</span>`;
   }
   box.innerHTML=rows+tail;
+  drawHill();
+}
+
+/* ---- the real loss slice for wire (trait 1 → true fish) ----
+   Changing this one wire only shifts the true fish's score, by
+   inputs[0] × (w − current). So the slice is exact and cheap.      */
+function sliceLoss(w){
+  const o2=outputs.slice();
+  o2[trueFish]=outputs[trueFish]+inputs[0]*(w-weights[0][trueFish]);
+  return crossEntropy(o2,trueFish);
+}
+function drawHill(){
+  const cv=document.getElementById('n-hill'); if(!cv) return;
+  const c=cv.getContext('2d'), W=cv.width, H=cv.height, pad=42;
+  c.clearRect(0,0,W,H);
+  if(!hist.length) return;
+  const wNow=weights[0][trueFish];
+  const xmin=wNow-3.2, xmax=wNow+3.2;
+  // sample the slice
+  const pts=[]; let lmax=0;
+  for(let w=xmin;w<=xmax;w+=(xmax-xmin)/220){
+    const l=sliceLoss(w); pts.push([w,l]); if(l>lmax) lmax=l;
+  }
+  const ymax=Math.max(0.5,Math.min(lmax,6));
+  const sx=w=>pad+(w-xmin)/(xmax-xmin)*(W-2*pad);
+  const sy=l=>H-pad-Math.max(0,Math.min(l,ymax))/ymax*(H-2*pad);
+
+  c.strokeStyle='#2d3644'; c.lineWidth=1;
+  c.beginPath(); c.moveTo(pad,H-pad); c.lineTo(W-pad,H-pad);
+  c.moveTo(pad,pad); c.lineTo(pad,H-pad); c.stroke();
+  c.fillStyle='#8b98a5'; c.font='11px sans-serif'; c.textAlign='right';
+  c.fillText('value of this ONE wire →',W-pad,H-pad+20);
+  c.save(); c.translate(15,H/2); c.rotate(-Math.PI/2); c.textAlign='center';
+  c.fillText('loss for this crop',0,0); c.restore();
+
+  // the hill
+  c.strokeStyle='#3b82f6'; c.lineWidth=2.5; c.beginPath();
+  pts.forEach(([w,l],k)=>{const X=sx(w),Y=sy(l);k?c.lineTo(X,Y):c.moveTo(X,Y);});
+  c.stroke();
+
+  // the valley (lowest sampled point)
+  let best=pts[0]; pts.forEach(p=>{if(p[1]<best[1])best=p;});
+  c.fillStyle='#22c55e'; c.beginPath(); c.arc(sx(best[0]),sy(best[1]),5,0,7); c.fill();
+
+  // where it has been
+  c.fillStyle='#8b98a5';
+  hist.slice(0,-1).forEach(h=>{
+    if(h.w<xmin||h.w>xmax) return;
+    c.globalAlpha=0.55; c.beginPath(); c.arc(sx(h.w),sy(h.loss),3.5,0,7); c.fill(); c.globalAlpha=1;
+  });
+
+  // the ball, now
+  const lNow=sliceLoss(wNow);
+  c.fillStyle='#f59e0b'; c.beginPath(); c.arc(sx(wNow),sy(lNow),7,0,7); c.fill();
+
+  // its tilt
+  const h=0.02, g=(sliceLoss(wNow+h)-sliceLoss(wNow-h))/(2*h);
+  c.strokeStyle='#ef4444'; c.lineWidth=2; c.setLineDash([6,4]); c.beginPath();
+  const t1=wNow-1.1,t2=wNow+1.1;
+  c.moveTo(sx(t1),sy(lNow+g*(t1-wNow))); c.lineTo(sx(t2),sy(lNow+g*(t2-wNow))); c.stroke();
+  c.setLineDash([]);
+
+  const note=document.getElementById('n-hillnote');
+  const flat=Math.abs(inputs[0])<0.06;
+  note.innerHTML= flat
+    ? `⚠️ Trait 1 is almost zero (${inputs[0].toFixed(2)}) for this crop, so this wire barely affects the score — `+
+      `its hill is nearly <b>flat</b> and it will hardly move. A weight handling no signal gets no blame. `+
+      `Press <b>↺ New crop</b> for a louder trait.`
+    : `The ball sits at <b>${wNow.toFixed(2)}</b>, the valley is at <b>${best[0].toFixed(2)}</b>, `+
+      `and the tilt here is <b>${g.toFixed(2)}</b> (matches the gradient column). `+
+      `Grey dots = where this wire has been. `+
+      `<br><br><b>One honest wrinkle:</b> the hill is drawn with the other 29 wires held where they are <i>now</i>. `+
+      `They moved too, so this curve shifts slightly each step — which is why old grey dots may sit just off `+
+      `the current line. Earlier I said "the hill never moves, only the ball does" — true for one weight in `+
+      `isolation, but when every weight moves together, each one's hill gets gently redrawn underneath it. 🏔️`;
 }
 
 function computeBackprop(){
@@ -963,6 +1049,9 @@ function resizeAll(){
   [bowl,nc].forEach(c=>{const w=c.parentElement.clientWidth-40;c.width=Math.max(320,w);});
   const mlf=document.getElementById('mlf');
   mlf.width=Math.max(320,mlf.parentElement.clientWidth-40);
+  const hc=document.getElementById('n-hill');
+  hc.width=Math.max(320,hc.parentElement.clientWidth-40);
+  if(hist.length) drawHill();
   miniCv.forEach(c=>{c.width=Math.max(140,c.parentElement.clientWidth-20);});
   drawBowl(); drawNet(showBlame?1:(guessFish!==null?1:0)); drawMany();
 }
