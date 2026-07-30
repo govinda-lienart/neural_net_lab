@@ -79,6 +79,20 @@
   .mathbox .hi{color:var(--ink)}
   .mathbox .tot{color:var(--accent);font-weight:700}
   .mathbox .big{color:var(--orange)}
+  /* token anatomy */
+  .tokwrap{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px}
+  .tokcap{font-size:12.5px;color:var(--muted);font-weight:600}
+  .tokcap em{font-weight:400;font-style:normal}
+  .tilegrid{display:grid;grid-template-columns:repeat(16,14px);grid-template-rows:repeat(16,14px);
+            gap:1px;margin-top:6px;background:var(--line);padding:1px;border-radius:4px;width:max-content}
+  .tile{background:var(--panel2);cursor:pointer;border-radius:1px}
+  .tile:hover{outline:1px solid var(--accent);z-index:2}
+  .tile.on{outline:2px solid #fff;z-index:3}
+  .tokstrip{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 14px}
+  .tok{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 9px;
+       font-size:11.5px;font-family:ui-monospace,Menlo,monospace;color:var(--muted)}
+  .tok.cls{border-color:var(--orange);color:var(--orange);font-weight:700}
+  .tok.on{border-color:#fff;color:var(--ink);font-weight:700}
   .sanity{margin-top:16px;background:var(--panel2);border:1px solid var(--line);
           border-left:3px solid var(--accent);border-radius:9px;padding:14px 18px}
   .sanity h4{margin:0 0 8px;font-size:14px;color:var(--ink)}
@@ -270,6 +284,48 @@
         <div class="rung"><b>4-D</b> tensor — a batch <code>(32,3,224,224)</code></div>
       </div>
       <div class="note" style="margin-top:14px">A <b>tensor</b> is just the umbrella word for a grid of numbers with <i>any</i> number of dimensions. Add a dimension → same thing, one level up.</div>
+    </div>
+
+    <div class="card">
+      <h3>Token anatomy — how that tensor becomes 257 tokens 🧩</h3>
+      <div class="sub">DINOv2 doesn't read the crop pixel by pixel. It <b>cuts it into tiles</b>, turns each tile
+        into a short list of numbers called a <b>token</b>, and reads the crop like a 257-word sentence.
+        <b>Click any tile</b> to follow its journey.</div>
+
+      <div class="tokwrap">
+        <div>
+          <div class="tokcap">the crop, cut into 16 × 16 tiles &nbsp;<em>(each tile = 14 × 14 pixels)</em></div>
+          <div class="tilegrid" id="tilegrid"></div>
+        </div>
+        <div style="flex:1;min-width:280px">
+          <div class="tokcap">what happens to the tile you clicked</div>
+          <div class="mathbox" id="tokmath" style="margin-top:6px">Click a tile in the grid. ☝️</div>
+        </div>
+      </div>
+
+      <div class="tokcap" style="margin-top:18px">the sequence the transformer actually reads</div>
+      <div class="tokstrip" id="tokstrip"></div>
+      <div class="note" id="clsnote">
+        <b>The CLS token comes from nowhere in the picture.</b> It's a blank, learned slot bolted onto the
+        front of the sequence — the note-taker. Across the 12 blocks, every token gets to look at every other
+        token (that's <i>attention</i>), and CLS spends the entire trip gathering from the 256 patch tokens.
+        At the end you keep <b>only CLS</b>: not because the others are worthless, but because CLS is the one
+        built to summarise. That's your 384-number fingerprint. 🎯
+      </div>
+
+      <h3 style="margin-top:20px">The shape ladder 🪜</h3>
+      <div class="sub">Every step, as a tensor shape — this is the whole journey from tab ③'s cube to tab ⑤'s cliff:</div>
+      <div class="mathbox" style="margin-top:10px">
+<span class="hi">(3, 224, 224)</span>   the crop as a tensor <span style="color:#8b98a5">← the cube above</span><br>
+<span class="hi">(256, 588)</span>     cut into 256 tiles, each flattened (14×14×3)<br>
+<span class="hi">(256, 384)</span>     each tile squashed into a token<br>
+<span class="hi">(257, 384)</span>     the CLS token added at the front<br>
+<span class="hi">(257, 384)</span>     …12 blocks later — <b class="hi">same shape</b>, new values<br>
+<span class="tot">(384,)</span>        keep only CLS = your fingerprint <span style="color:#8b98a5">← tab ⑤'s cliff</span>
+<br><br><span style="font-size:12px">⚠️ The tile → token step is <b class="hi">not</b> a resize or a crop. It's a
+learned projection: 588 numbers in, 384 out, through weights — the same multiply-and-add as everywhere else,
+using part of the frozen backbone. Nothing here is cropping or scaling an image.</span>
+      </div>
     </div>
   </div>
 
@@ -1143,6 +1199,60 @@ function mReset(){
 document.getElementById('m-play').onclick=mPlay;
 document.getElementById('m-step').onclick=()=>{mStop();mStepOnce();};
 document.getElementById('m-reset').onclick=mReset;
+
+/* ---------- token anatomy: tensor → tiles → tokens → CLS ---------- */
+const PATCH=14, SIDE=224/PATCH;              // 16 x 16 = 256 tiles
+let pickedTile=null;
+(function buildTiles(){
+  const grid=document.getElementById('tilegrid');
+  for(let r=0;r<SIDE;r++)for(let c=0;c<SIDE;c++){
+    const d=document.createElement('div'); d.className='tile';
+    // a soft fishy gradient so the grid reads as a picture, not noise
+    const v=Math.round(40+70*Math.sin(r/3.1)*Math.cos(c/4.3)+40*Math.random());
+    d.style.background=`rgb(${Math.max(20,v*0.5)},${Math.max(28,v*0.8)},${Math.max(38,v)})`;
+    d.onclick=()=>showToken(r,c);
+    grid.appendChild(d);
+  }
+  buildStrip();
+})();
+function buildStrip(){
+  const strip=document.getElementById('tokstrip'); strip.innerHTML='';
+  const add=(txt,cls)=>{const s=document.createElement('div');s.className='tok'+(cls?' '+cls:'');s.textContent=txt;strip.appendChild(s);return s;};
+  add('CLS','cls');
+  for(let i=1;i<=6;i++) add('t'+i);
+  add('…');
+  add('t256');
+  const tail=document.createElement('div');
+  tail.style.cssText='font-size:12px;color:#8b98a5;margin-left:6px';
+  tail.innerHTML='= <b style="color:#e6edf3">257 tokens</b>, each <b style="color:#e6edf3">384</b> numbers wide';
+  strip.appendChild(tail);
+}
+function showToken(r,c){
+  const idx=r*SIDE+c;                        // 0-based tile index
+  pickedTile=idx;
+  document.querySelectorAll('#tilegrid .tile').forEach((t,i)=>t.classList.toggle('on',i===idx));
+  // reflect it in the strip: light the matching chip when it's one we drew
+  document.querySelectorAll('#tokstrip .tok').forEach(t=>t.classList.remove('on'));
+  const chips=[...document.querySelectorAll('#tokstrip .tok')];
+  const label='t'+(idx+1);
+  const hit=chips.find(t=>t.textContent===label);
+  if(hit) hit.classList.add('on'); else chips.find(t=>t.textContent==='…')?.classList.add('on');
+  const px=PATCH*PATCH, raw=px*3;
+  document.getElementById('tokmath').innerHTML=
+    `<b class="hi">tile at row ${r}, column ${c}</b> &nbsp;→&nbsp; token <b class="hi">t${idx+1}</b> of 256<br><br>`+
+    `it covers pixels rows <span class="hi">${r*PATCH}–${r*PATCH+PATCH-1}</span>, `+
+    `cols <span class="hi">${c*PATCH}–${c*PATCH+PATCH-1}</span><br><br>`+
+    `<span style="color:#2d3644">────────────────────</span><br>`+
+    `${PATCH} × ${PATCH} pixels &nbsp;= &nbsp;<span class="hi">${px}</span> pixels<br>`+
+    `× 3 colour channels &nbsp;= &nbsp;<span class="hi">${raw}</span> numbers<br>`+
+    `&nbsp;&nbsp;&nbsp;&nbsp;↓ flatten into one row<br>`+
+    `a row of <span class="hi">${raw}</span> numbers<br>`+
+    `&nbsp;&nbsp;&nbsp;&nbsp;↓ learned projection (weights!)<br>`+
+    `<span class="tot">384</span> numbers &nbsp;= &nbsp;<b class="tot">one token</b><br><br>`+
+    `<span style="font-size:12px">Every one of the 256 tiles goes through this <b class="hi">same</b> projection — `+
+    `one small set of weights, reused 256 times. Then CLS is added at the front, giving `+
+    `<b class="hi">257 × 384</b>.</span>`;
+}
 
 /* ================= VIEW 5: THE WHOLE FLOW ================= */
 const fc=document.getElementById('flowcanvas'), fx=fc.getContext('2d');
