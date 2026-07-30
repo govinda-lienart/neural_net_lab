@@ -79,6 +79,15 @@
   .mathbox .hi{color:var(--ink)}
   .mathbox .tot{color:var(--accent);font-weight:700}
   .mathbox .big{color:var(--orange)}
+  .sanity{margin-top:16px;background:var(--panel2);border:1px solid var(--line);
+          border-left:3px solid var(--accent);border-radius:9px;padding:14px 18px}
+  .sanity h4{margin:0 0 8px;font-size:14px;color:var(--ink)}
+  .sanity p{margin:0 0 12px;font-size:13px;color:var(--muted);line-height:1.6}
+  .sanity p.last{margin:12px 0 0}
+  .sanity .rung{display:flex;flex-direction:column;gap:2px;background:var(--panel);
+                padding:9px 14px;min-width:112px}
+  .sanity .rung b{color:var(--accent);font-size:15px;font-variant-numeric:tabular-nums}
+  .sanity .rung span{font-size:12px;color:var(--muted)}
   button.pick{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
               padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
   button.pick.on{border-color:var(--accent);color:var(--accent)}
@@ -169,6 +178,21 @@
         percentages (that's softmax), then the loss is <b>how little probability the true fish received</b>.
         Together this is <code>nn.CrossEntropyLoss</code>.</div>
       <div class="mathbox" id="n-lossmath">Fire a crop to see the loss worked out. ☝️</div>
+
+      <div class="sanity">
+        <h4>📌 What loss should you expect?</h4>
+        <p>With 5 fish, a model that knows nothing spreads its confidence evenly — 20% each.
+           So <b>−ln(0.20) = 1.61</b> is the clueless baseline, and every other number reads against it.</p>
+        <div class="ladder">
+          <div class="rung"><b>≈ 1.61</b><span>knows nothing 🎲</span></div>
+          <div class="rung"><b>≈ 0.70</b><span>getting somewhere</span></div>
+          <div class="rung"><b>≈ 0.10</b><span>confident, usually right 😎</span></div>
+          <div class="rung"><b>2.5 +</b><span>worse than guessing 😬</span></div>
+        </div>
+        <p class="last">A fresh random head <i>should</i> start near <b>1.61</b>. If it's still there after several
+           epochs, something is broken — frozen head, wrong learning rate, or bad labels.
+           Cheapest sanity check you have on day one.</p>
+      </div>
     </div>
     <div class="card">
       <h3>What you're seeing 👀</h3>
@@ -412,13 +436,7 @@ function showLossMath(){
     `the model gave ${FISH[trueFish]} only <span class="tot">${(p[trueFish]*100).toFixed(1)}%</span><br>`+
     `loss = −ln(${p[trueFish].toFixed(4)}) = <span class="big">${L.toFixed(2)}</span>`+
     `<br><br><span style="font-size:12px">100% on the true fish → loss 0. `+
-    `50% → 0.69. &nbsp;10% → 2.30. &nbsp;1% → 4.61. The less it believed the truth, the higher the loss.`+
-    `<br><br><b class="hi">📌 Sanity check for 5 fish:</b> a model that knows nothing gives everyone 20%, `+
-    `so <b class="tot">−ln(0.20) = 1.61</b> is the clueless baseline.<br>`+
-    `&nbsp;&nbsp;≈1.61 → knows nothing (or isn't learning) &nbsp;·&nbsp; ≈0.7 → getting somewhere &nbsp;·&nbsp; `+
-    `≈0.1 → confident and usually right &nbsp;·&nbsp; 2.5+ → worse than guessing<br>`+
-    `&nbsp;&nbsp;A fresh random head <i>should</i> start near 1.61. Still there after several epochs = `+
-    `something is wrong (frozen head, bad learning rate, broken labels).</span>`;
+    `50% → 0.69. &nbsp;10% → 2.30. &nbsp;1% → 4.61. The less it believed the truth, the higher the loss.</span>`;
 }
 
 /* ---- show the real multiply-and-add behind one fish's score ---- */
