@@ -163,6 +163,12 @@
         line by line — these are the real numbers on the canvas above.</div>
       <div class="controls" style="margin-top:8px" id="n-picks"></div>
       <div class="mathbox" id="n-math">Fire a crop first, then pick a fish. ☝️</div>
+
+      <h3 style="margin-top:20px">📏 …and how the loss is calculated</h3>
+      <div class="sub">Three steps: <b>e^score</b> to make everything positive, <b>divide by the total</b> to get
+        percentages (that's softmax), then the loss is <b>how little probability the true fish received</b>.
+        Together this is <code>nn.CrossEntropyLoss</code>.</div>
+      <div class="mathbox" id="n-lossmath">Fire a crop to see the loss worked out. ☝️</div>
     </div>
     <div class="card">
       <h3>What you're seeing 👀</h3>
@@ -351,7 +357,10 @@ function newCrop(){
   trueFish=Math.floor(Math.random()*NOUT);
   inputs=[];for(let i=0;i<NIN;i++)inputs[i]=(Math.random()*2-1);
   // nudge inputs so the true fish is *somewhat* learnable but not guaranteed (untrained net)
-  outputs=new Array(NOUT).fill(0); guessFish=null; showBlame=false; animT=0;
+  outputs=new Array(NOUT).fill(0); guessFish=null; showBlame=false; animT=0; pickedFish=null;
+  document.querySelectorAll('#n-picks .pick').forEach(b=>b.classList.remove('on'));
+  document.getElementById('n-math').innerHTML='Fire a crop first, then pick a fish. ☝️';
+  document.getElementById('n-lossmath').innerHTML='Fire a crop to see the loss worked out. ☝️';
   document.getElementById('n-true').textContent=FISH[trueFish];
   document.getElementById('n-guess').textContent='—';
   document.getElementById('n-loss').textContent='—';
@@ -364,6 +373,54 @@ function computeOutputs(){
   for(let o=0;o<NOUT;o++){let s=0;for(let i=0;i<NIN;i++)s+=inputs[i]*weights[i][o];outputs[o]=s;}
   let mx=-1e9;for(let o=0;o<NOUT;o++)if(outputs[o]>mx){mx=outputs[o];guessFish=o;}
 }
+/* ---- softmax + cross-entropy: the real loss, not a placeholder ---- */
+function softmax(scores){
+  const m=Math.max(...scores);                 // subtract max for numerical stability
+  const ex=scores.map(s=>Math.exp(s-m));
+  const tot=ex.reduce((a,b)=>a+b,0);
+  return ex.map(e=>e/tot);
+}
+function crossEntropy(scores,target){
+  return -Math.log(Math.max(1e-12, softmax(scores)[target]));
+}
+function showLossMath(){
+  const box=document.getElementById('n-lossmath');
+  if(guessFish===null){box.innerHTML='Fire a crop to see the loss worked out. ☝️';return;}
+  const p=softmax(outputs), L=crossEntropy(outputs,trueFish);
+  const ex=outputs.map(s=>Math.exp(s)), tot=ex.reduce((a,b)=>a+b,0);
+  const sp=n=>(n>=0?'+':'')+n.toFixed(2);
+  let rows='';
+  for(let o=0;o<NOUT;o++){
+    const isT=o===trueFish;
+    rows+=`${FISH[o]}: &nbsp;e^(<span class="hi">${sp(outputs[o])}</span>) = `+
+          `<span class="hi">${ex[o].toFixed(4)}</span>`+
+          `${isT?' &nbsp;← the TRUE fish':''}${o===guessFish?' &nbsp;🏆':''}<br>`;
+  }
+  let rows2='';
+  for(let o=0;o<NOUT;o++){
+    const isT=o===trueFish;
+    rows2+=`${FISH[o]}: &nbsp;${ex[o].toFixed(4)} / ${tot.toFixed(4)} = `+
+           `<span class="${isT?'tot':'hi'}">${(p[o]*100).toFixed(1)}%</span>`+
+           `${isT?' &nbsp;← the TRUE fish':''}<br>`;
+  }
+  box.innerHTML=
+    `<b class="hi">step 1 — raise e to each score (makes them all positive)</b><br><br>${rows}`+
+    `<span style="color:#2d3644">──────────────────────</span><br>`+
+    `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;total = <span class="tot">${tot.toFixed(4)}</span><br><br>`+
+    `<b class="hi">step 2 — each one's share of that total (adds to 100%)</b><br><br>${rows2}`+
+    `<br><b class="hi">step 3 — loss = how little was given to the true fish</b><br><br>`+
+    `the model gave ${FISH[trueFish]} only <span class="tot">${(p[trueFish]*100).toFixed(1)}%</span><br>`+
+    `loss = −ln(${p[trueFish].toFixed(4)}) = <span class="big">${L.toFixed(2)}</span>`+
+    `<br><br><span style="font-size:12px">100% on the true fish → loss 0. `+
+    `50% → 0.69. &nbsp;10% → 2.30. &nbsp;1% → 4.61. The less it believed the truth, the higher the loss.`+
+    `<br><br><b class="hi">📌 Sanity check for 5 fish:</b> a model that knows nothing gives everyone 20%, `+
+    `so <b class="tot">−ln(0.20) = 1.61</b> is the clueless baseline.<br>`+
+    `&nbsp;&nbsp;≈1.61 → knows nothing (or isn't learning) &nbsp;·&nbsp; ≈0.7 → getting somewhere &nbsp;·&nbsp; `+
+    `≈0.1 → confident and usually right &nbsp;·&nbsp; 2.5+ → worse than guessing<br>`+
+    `&nbsp;&nbsp;A fresh random head <i>should</i> start near 1.61. Still there after several epochs = `+
+    `something is wrong (frozen head, bad learning rate, broken labels).</span>`;
+}
+
 /* ---- show the real multiply-and-add behind one fish's score ---- */
 let pickedFish=null;
 (function buildPicks(){
@@ -380,6 +437,7 @@ function showMath(o){
   document.querySelectorAll('#n-picks .pick').forEach((b,i)=>b.classList.toggle('on',i===o));
   const box=document.getElementById('n-math');
   if(guessFish===null){box.innerHTML='Fire a crop first, then pick a fish. ☝️';return;}
+  drawNet(1);   // redraw with only this fish's wires lit and labelled
   const pad=n=>(n>=0?' ':'')+n.toFixed(2);
   let lines='', total=0;
   for(let i=0;i<NIN;i++){
@@ -426,8 +484,26 @@ function drawNet(prog){
       const reveal=Math.max(0,Math.min(1,(prog*1.6)-i*0.04));
       alpha*=reveal;
     }
+    // isolating one fish: fade every wire that doesn't feed it
+    if(pickedFish!==null && !showBlame && o!==pickedFish) alpha=Math.min(alpha,0.05);
     ncx.strokeStyle=`rgba(${col},${alpha})`; ncx.lineWidth=lw;
     ncx.beginPath(); ncx.moveTo(P.inX,P.inYs[i]); ncx.lineTo(P.outX,P.outYs[o]); ncx.stroke();
+  }
+  // write the actual weight on each wire feeding the picked fish
+  if(pickedFish!==null && !showBlame && prog>=1){
+    ncx.font='bold 11px ui-monospace,Menlo,monospace'; ncx.textAlign='center';
+    for(let i=0;i<NIN;i++){
+      const w=weights[i][pickedFish];
+      const t=0.30;                                   // 30% along the wire
+      const X=P.inX+(P.outX-P.inX)*t, Y=P.inYs[i]+(P.outYs[pickedFish]-P.inYs[i])*t;
+      const label=(w>=0?'+':'')+w.toFixed(2);
+      const wd=ncx.measureText(label).width+8;
+      ncx.fillStyle='#0e1116'; ncx.globalAlpha=0.85;
+      ncx.fillRect(X-wd/2,Y-8,wd,16); ncx.globalAlpha=1;
+      ncx.fillStyle=w>=0?'#3b82f6':'#ef4444';
+      ncx.fillText(label,X,Y+4);
+    }
+    ncx.textAlign='left';
   }
   // input nodes
   for(let i=0;i<NIN;i++){
@@ -464,14 +540,14 @@ function fireForward(){
     if(animT<1)animRAF=requestAnimationFrame(run);
     else{
       const correct=guessFish===trueFish;
-      const loss=correct?0.4:(1.5+Math.random()).toFixed(2);
+      const loss=crossEntropy(outputs,trueFish).toFixed(2);
       document.getElementById('n-guess').textContent=FISH[guessFish];
-      document.getElementById('n-loss').textContent=correct?'0.40 (low!)':loss;
+      document.getElementById('n-loss').textContent=correct?`${loss} (low!)`:loss;
       document.getElementById('n-back').disabled=false;
       document.getElementById('n-note').innerHTML=correct
         ? `✅ Guessed <b>${FISH[guessFish]}</b> — matches the true fish! Low loss. (An untrained net gets this right ~1 in 5 by luck.) Try backprop to see reinforcement.`
         : `❌ Guessed <b>${FISH[guessFish]}</b> but truth is <b>${FISH[trueFish]}</b>. High loss. Now hit <b>← Backprop</b> to see which wires get blamed.`;
-      showMath(guessFish);
+      showMath(guessFish); showLossMath();
     }
   };
   run();

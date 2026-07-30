@@ -76,6 +76,48 @@ Why graded rather than just counting mistakes? Counting gives whole numbers:
 direction to move. The graded loss shifts smoothly when a fader moves a hair —
 and a smooth shift is a **slope** you can follow.
 
+### How the number is actually computed (`nn.CrossEntropyLoss`)
+
+Three steps, from the five raw scores:
+
+```
+1. e^score for each        turns any score, even negative, into a positive number
+2. divide by their total    → five percentages that add to 100%   (steps 1+2 = softmax)
+3. loss = −ln(the percentage given to the TRUE fish)
+```
+
+Only the true fish's percentage matters; the other four are ignored. And the
+shape of `−ln` is the point: 100% → loss 0, 10% → 2.30, 1% → 4.61. It punishes
+**confident wrongness** hardest.
+
+Two practical notes:
+
+- `−ln` rather than `log₁₀` is mostly convention — a different base just scales
+  every loss by a constant and changes nothing about which way is downhill.
+  Logs matter because they turn *multiplying* probabilities into *adding* them,
+  which stops a batch of small numbers underflowing to zero.
+- This is why `label_map` converts fish IDs 1–5 into slots 0–4: the loss needs
+  to know *which position* in the output list to look up.
+
+### 📌 Sanity check: what loss should you expect?
+
+With 5 fish, a model that knows nothing gives everyone 20%:
+
+```
+−ln(0.20) = 1.61      ← the clueless baseline
+```
+
+| loss | meaning |
+|---|---|
+| ≈ 1.61 | knows nothing — or isn't learning 🎲 |
+| ≈ 0.7 | getting somewhere |
+| ≈ 0.1 | confident and usually right 😎 |
+| 2.5+ | worse than guessing — actively misled 😬 |
+
+A fresh random head **should** start near 1.61. If it's still there after several
+epochs, something is wrong — frozen head, bad learning rate, or broken labels.
+This is the cheapest sanity check you have on day one of Stage 6.4.
+
 ---
 
 ## Step 4 — the landscape (a picture, never actually drawn)
