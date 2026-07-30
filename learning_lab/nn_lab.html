@@ -619,17 +619,19 @@ function showBackMath(){
           `<span class="${isT?'tot':'hi'}">${sp(lastBlame[o])}</span>`+
           `${isT?' &nbsp;← the truth: short by this much 🟢':' &nbsp;too enthusiastic 🟠'}<br>`;
   }
+  const pf=pickedFish!==null?pickedFish:trueFish;      // whichever fish is selected
+  const isTruth=pf===trueFish;
   let g='';
   for(let i=0;i<NIN;i++){
-    const gr=lastGrads[i][trueFish];
-    g+=`wire (trait ${i+1} → ${FISH[trueFish]}): &nbsp;`+
+    const gr=lastGrads[i][pf];
+    g+=`wire (trait ${i+1} → ${FISH[pf]}): &nbsp;`+
        `<span class="hi">${(inputs[i]>=0?'+':'')+inputs[i].toFixed(2)}</span> × `+
-       `<span class="tot">${sp(lastBlame[trueFish])}</span> = `+
+       `<span class="tot">${sp(lastBlame[pf])}</span> = `+
        `<span class="${Math.abs(gr)>0.3?'big':'hi'}">${sp(gr)}</span><br>`;
   }
   let up='';
   for(let i=0;i<NIN;i++){
-    const w=weights[i][trueFish], gr=lastGrads[i][trueFish], nw=w-N_LR*gr;
+    const w=weights[i][pf], gr=lastGrads[i][pf], nw=w-N_LR*gr;
     up+=`trait ${i+1}: &nbsp;<span class="hi">${sp(w)}</span> − ${N_LR} × `+
         `<span class="${Math.abs(gr)>0.3?'big':'hi'}">${sp(gr)}</span> = `+
         `<span class="tot">${sp(nw)}</span> `+
@@ -641,22 +643,29 @@ function showBackMath(){
     `Notice the loss value (${lossBefore.toFixed(2)}) does <i>not</i> appear — it never travels back.</span><br><br>`+
     rows+
     `<br><b class="hi">step 2 — each wire's gradient = its trait × its output's blame</b><br>`+
-    `<span style="font-size:12px">Shown for the 6 wires feeding ${FISH[trueFish]} (the green ones). `+
-    `The same happens for all 30.</span><br><br>`+
+    `<span style="font-size:12px">Showing <b class="hi">${FISH[pf]}</b>`+
+    `${isTruth?' — the TRUE fish 🟢':' — a WRONG fish 🟠'}. `+
+    `Click any fish button above to inspect its six wires. The same happens for all 30.</span><br><br>`+
     g+
     `<br><b class="hi">step 3 — the update: new weight = old − ${N_LR} × gradient</b><br>`+
-    `<span style="font-size:12px">All 6 wires into ${FISH[trueFish]}, before → after.</span><br><br>`+
+    `<span style="font-size:12px">All 6 wires into ${FISH[pf]}, before → after.</span><br><br>`+
     up+
-    `<br><span style="font-size:12px">A <b class="hi">negative</b> gradient means subtracting it makes the wire `+
-    `<b class="hi">bigger</b>; a positive one shrinks it. Either way the change pushes `+
-    `${FISH[trueFish]}'s score <b class="hi">up</b> for this crop — that's the point. `+
-    `Press <b>🎛️ Apply the update</b>, then fire the same crop again. 🎯</span>`;
+    `<br><span style="font-size:12px">`+
+    (isTruth
+      ? `${FISH[pf]} is the <b class="hi">truth</b>, so its blame is <b class="tot">negative</b> `+
+        `(${sp(lastBlame[pf])}) and every change pushes its score <b class="hi">UP</b>. 🟢`
+      : `${FISH[pf]} is <b class="hi">not</b> the truth, so its blame is <b class="tot">positive</b> `+
+        `(${sp(lastBlame[pf])}) and every change pushes its score <b class="hi">DOWN</b>. 🟠 `+
+        `Notice its blame is smaller than the true fish's — being wrongly confident costs less than `+
+        `missing the right answer.`)+
+    ` &nbsp;Press <b>🎛️ Apply the update</b> to commit it. 🎯</span>`;
 }
 
 function applyUpdate(){
   if(!lastGrads) return;
   const sp=n=>(n>=0?'+':'')+n.toFixed(3);
-  const tf=trueFish, before=weights.map(r=>r[tf]);      // snapshot for the receipt
+  const tf=pickedFish!==null?pickedFish:trueFish;       // report on whichever fish is selected
+  const before=weights.map(r=>r[tf]);                   // snapshot for the receipt
   const scoreBefore=outputs[tf];
   for(let i=0;i<NIN;i++)for(let o=0;o<NOUT;o++) weights[i][o]-=N_LR*lastGrads[i][o];
   let diff='';
@@ -679,7 +688,8 @@ function applyUpdate(){
     `<br><b class="hi">what that did to ${FISH[tf]}'s score:</b><br><br>`+
     `score: <span class="hi">${scoreBefore.toFixed(2)}</span> → `+
     `<span class="tot">${scoreAfter.toFixed(2)}</span> `+
-    `<span style="font-size:11px">(${scoreAfter>scoreBefore?'▲ up':'▼ down'})</span><br>`+
+    `<span style="font-size:11px">(${scoreAfter>scoreBefore?'▲ up':'▼ down'}`+
+    `${tf===trueFish?' — the truth, always up 🟢':' — not the truth, pushed down 🟠'})</span><br>`+
     `loss: &nbsp;<span class="hi">${lossBefore.toFixed(2)}</span> → `+
     `<span class="tot">${after.toFixed(2)}</span><br>`+
     `<span style="color:#2d3644">──────────────────</span><br>`+
@@ -707,7 +717,8 @@ function showMath(o){
   document.querySelectorAll('#n-picks .pick').forEach((b,i)=>b.classList.toggle('on',i===o));
   const box=document.getElementById('n-math');
   if(guessFish===null){box.innerHTML='Fire a crop first, then pick a fish. ☝️';return;}
-  drawNet(1);   // redraw with only this fish's wires lit and labelled
+  drawNet(1);                            // redraw with only this fish's wires lit and labelled
+  if(showBlame&&lastGrads) showBackMath();  // during backprop, retarget the blame panel too
   const pad=n=>(n>=0?' ':'')+n.toFixed(2);
   let lines='', total=0;
   for(let i=0;i<NIN;i++){
@@ -759,13 +770,14 @@ function drawNet(prog){
     ncx.strokeStyle=`rgba(${col},${alpha})`; ncx.lineWidth=lw;
     ncx.beginPath(); ncx.moveTo(P.inX,P.inYs[i]); ncx.lineTo(P.outX,P.outYs[o]); ncx.stroke();
   }
-  // during backprop: preview old → new on each wire feeding the TRUE fish
+  // during backprop: preview old → new on each wire feeding the SELECTED fish
   if(showBlame && lastGrads){
+    const pf=pickedFish!==null?pickedFish:trueFish;
     ncx.font='bold 11px ui-monospace,Menlo,monospace'; ncx.textAlign='center';
     for(let i=0;i<NIN;i++){
-      const w=weights[i][trueFish], nw=w-N_LR*lastGrads[i][trueFish];
+      const w=weights[i][pf], nw=w-N_LR*lastGrads[i][pf];
       const t=0.34;
-      const X=P.inX+(P.outX-P.inX)*t, Y=P.inYs[i]+(P.outYs[trueFish]-P.inYs[i])*t;
+      const X=P.inX+(P.outX-P.inX)*t, Y=P.inYs[i]+(P.outYs[pf]-P.inYs[i])*t;
       const a=(w>=0?'+':'')+w.toFixed(2), b=(nw>=0?'+':'')+nw.toFixed(2);
       const label=`${a} → ${b}`;
       const wd=ncx.measureText(label).width+10;
