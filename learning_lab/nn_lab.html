@@ -495,7 +495,14 @@ function showBackMath(){
        `<span class="tot">${sp(lastBlame[trueFish])}</span> = `+
        `<span class="${Math.abs(gr)>0.3?'big':'hi'}">${sp(gr)}</span><br>`;
   }
-  const i0=0, w0=weights[i0][trueFish], g0=lastGrads[i0][trueFish];
+  let up='';
+  for(let i=0;i<NIN;i++){
+    const w=weights[i][trueFish], gr=lastGrads[i][trueFish], nw=w-N_LR*gr;
+    up+=`trait ${i+1}: &nbsp;<span class="hi">${sp(w)}</span> − ${N_LR} × `+
+        `<span class="${Math.abs(gr)>0.3?'big':'hi'}">${sp(gr)}</span> = `+
+        `<span class="tot">${sp(nw)}</span> `+
+        `<span style="font-size:11px">(${nw>w?'▲ bigger':'▼ smaller'})</span><br>`;
+  }
   box.innerHTML=
     `<b class="hi">step 1 — blame on each of the 5 outputs</b><br>`+
     `<span style="font-size:12px">blame = its own % minus 1 for the true fish, 0 for the rest. `+
@@ -505,20 +512,31 @@ function showBackMath(){
     `<span style="font-size:12px">Shown for the 6 wires feeding ${FISH[trueFish]} (the green ones). `+
     `The same happens for all 30.</span><br><br>`+
     g+
-    `<br><b class="hi">step 3 — the update (learning rate ${N_LR})</b><br><br>`+
-    `wire (trait 1 → ${FISH[trueFish]}): &nbsp;`+
-    `<span class="hi">${sp(w0)}</span> − ${N_LR} × <span class="hi">${sp(g0)}</span> = `+
-    `<span class="big">${sp(w0-N_LR*g0)}</span><br><br>`+
-    `<span style="font-size:12px">A <b class="hi">negative</b> gradient means subtracting it makes the wire `+
-    `<b class="hi">bigger</b> → ${FISH[trueFish]}'s score goes up next time. `+
+    `<br><b class="hi">step 3 — the update: new weight = old − ${N_LR} × gradient</b><br>`+
+    `<span style="font-size:12px">All 6 wires into ${FISH[trueFish]}, before → after.</span><br><br>`+
+    up+
+    `<br><span style="font-size:12px">A <b class="hi">negative</b> gradient means subtracting it makes the wire `+
+    `<b class="hi">bigger</b>; a positive one shrinks it. Either way the change pushes `+
+    `${FISH[trueFish]}'s score <b class="hi">up</b> for this crop — that's the point. `+
     `Press <b>🎛️ Apply the update</b>, then fire the same crop again. 🎯</span>`;
 }
 
 function applyUpdate(){
   if(!lastGrads) return;
+  const sp=n=>(n>=0?'+':'')+n.toFixed(3);
+  const tf=trueFish, before=weights.map(r=>r[tf]);      // snapshot for the receipt
+  const scoreBefore=outputs[tf];
   for(let i=0;i<NIN;i++)for(let o=0;o<NOUT;o++) weights[i][o]-=N_LR*lastGrads[i][o];
+  let diff='';
+  for(let i=0;i<NIN;i++){
+    const w=weights[i][tf], d=w-before[i];
+    diff+=`trait ${i+1}: &nbsp;<span class="hi">${sp(before[i])}</span> → `+
+          `<span class="tot">${sp(w)}</span> `+
+          `<span style="font-size:11px">(${d>=0?'+':''}${d.toFixed(3)})</span><br>`;
+  }
   computeOutputs();
   const after=crossEntropy(outputs,trueFish);
+  const scoreAfter=outputs[tf];
   showBlame=false; pickedFish=null; lastBlame=null; lastGrads=null;
   document.getElementById('n-apply').disabled=true;
   document.getElementById('n-back').disabled=true;
@@ -528,8 +546,13 @@ function applyUpdate(){
   const drop=lossBefore-after;
   document.getElementById('n-backmath').innerHTML=
     `<b class="hi">✅ 30 wires nudged. Same crop, same traits — only the desk changed.</b><br><br>`+
-    `loss before: <span class="hi">${lossBefore.toFixed(2)}</span><br>`+
-    `loss after: &nbsp;<span class="tot">${after.toFixed(2)}</span><br>`+
+    `<b class="hi">the 6 wires into ${FISH[tf]}, actually changed:</b><br><br>${diff}`+
+    `<br><b class="hi">what that did to ${FISH[tf]}'s score:</b><br><br>`+
+    `score: <span class="hi">${scoreBefore.toFixed(2)}</span> → `+
+    `<span class="tot">${scoreAfter.toFixed(2)}</span> `+
+    `<span style="font-size:11px">(${scoreAfter>scoreBefore?'▲ up':'▼ down'})</span><br>`+
+    `loss: &nbsp;<span class="hi">${lossBefore.toFixed(2)}</span> → `+
+    `<span class="tot">${after.toFixed(2)}</span><br>`+
     `<span style="color:#2d3644">──────────────────</span><br>`+
     `improvement: <span class="big">${drop>0?'−':'+'}${Math.abs(drop).toFixed(2)}</span>`+
     `${guessFish===trueFish?' &nbsp;🎉 and the guess is now CORRECT':''}<br><br>`+
